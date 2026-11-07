@@ -12,6 +12,7 @@ std = ["ark-ff/std", "ark-std/std", "ark-bls12-381/std", "ark-crypto-primitives/
 # Circuit, setup and proving. Off inside the NEAR contract, which only needs hashing.
 prover = [
     "std",
+    "dep:num-bigint",
     "ark-crypto-primitives/constraints",
     "dep:ark-r1cs-std",
     "dep:ark-relations",
@@ -39,6 +40,7 @@ borsh.workspace = true
 sha2.workspace = true
 hex.workspace = true
 getrandom = { version = "0.2", optional = true }
+num-bigint = { version = "0.4", optional = true }
 
 [[bin]]
 name = "gen-consts"

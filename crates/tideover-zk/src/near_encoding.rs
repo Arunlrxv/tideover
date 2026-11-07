@@ -4,10 +4,11 @@
 //! Scalars: 32 bytes little-endian.
 
 use crate::{encoding::fr_to_bytes, Fr};
-use ark_bls12_381::{Bls12_381, G1Affine, G2Affine};
+use ark_bls12_381::{Bls12_381, Fq, Fq2, G1Affine, G2Affine};
 use ark_ec::AffineRepr;
 use ark_ff::{BigInteger, PrimeField};
 use ark_groth16::{Proof, VerifyingKey};
+use num_bigint::BigUint;
 
 pub const G1_LEN: usize = 96;
 pub const G2_LEN: usize = 192;
@@ -52,4 +53,33 @@ pub fn proof_bytes(proof: &Proof<Bls12_381>) -> Vec<u8> {
 
 pub fn inputs_bytes(inputs: &[Fr]) -> Vec<u8> {
     inputs.iter().flat_map(fr_to_bytes).collect()
+}
+
+fn fq_be(bytes: &[u8]) -> Option<Fq> {
+    let v = BigUint::from_bytes_be(bytes);
+    (v < Fq::MODULUS.into()).then(|| Fq::from(v))
+}
+
+fn g1_from(bytes: &[u8]) -> Option<G1Affine> {
+    let p = G1Affine::new_unchecked(fq_be(&bytes[..48])?, fq_be(&bytes[48..96])?);
+    (p.is_on_curve() && p.is_in_correct_subgroup_assuming_on_curve()).then_some(p)
+}
+
+fn g2_from(bytes: &[u8]) -> Option<G2Affine> {
+    let x = Fq2::new(fq_be(&bytes[48..96])?, fq_be(&bytes[..48])?);
+    let y = Fq2::new(fq_be(&bytes[144..192])?, fq_be(&bytes[96..144])?);
+    let p = G2Affine::new_unchecked(x, y);
+    (p.is_on_curve() && p.is_in_correct_subgroup_assuming_on_curve()).then_some(p)
+}
+
+/// The inverse of `proof_bytes`, for re-checking a stored proof off chain.
+pub fn proof_from_bytes(bytes: &[u8]) -> Option<Proof<Bls12_381>> {
+    if bytes.len() != PROOF_LEN {
+        return None;
+    }
+    Some(Proof {
+        a: g1_from(&bytes[..G1_LEN])?,
+        b: g2_from(&bytes[G1_LEN..G1_LEN + G2_LEN])?,
+        c: g1_from(&bytes[G1_LEN + G2_LEN..])?,
+    })
 }

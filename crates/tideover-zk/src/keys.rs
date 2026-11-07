@@ -156,6 +156,22 @@ mod tests {
     }
 
     #[test]
+    fn a_stored_proof_decodes_back_to_a_verifying_proof() {
+        let (pk, vk) = keys();
+        let g = group();
+        let c = claim(&g, 2, 2);
+        let inputs = c.public.to_inputs();
+        let proof = prove(pk, c, [4u8; 32]);
+        let bytes = near_encoding::proof_bytes(&proof);
+        let back = near_encoding::proof_from_bytes(&bytes).unwrap();
+        assert_eq!(back, proof);
+        assert!(verify(vk, &inputs, &back));
+        let mut corrupted = bytes;
+        corrupted[10] ^= 1;
+        assert!(near_encoding::proof_from_bytes(&corrupted).is_none());
+    }
+
+    #[test]
     fn keys_roundtrip_through_bytes() {
         let (pk, _) = keys();
         let back = pk_from_bytes(&pk_to_bytes(pk).unwrap()).unwrap();
