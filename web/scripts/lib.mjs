@@ -67,6 +67,14 @@ export function outcome(r) {
   return { hash: r.transaction?.hash, value, tgas: Math.round(burnt / 1e11) / 10, logs: (r.receipts_outcome ?? []).flatMap((o) => o.outcome.logs) };
 }
 
+/** The NEAR AI key, from the environment or the line in web/.env.local. */
+export function aiKey() {
+  if (process.env.NEAR_AI_API_KEY) return process.env.NEAR_AI_API_KEY;
+  const path = join(ROOT, "web", ".env.local");
+  if (!existsSync(path)) return "";
+  return readFileSync(path, "utf8").match(/^NEAR_AI_API_KEY=(.*)$/m)?.[1]?.trim() ?? "";
+}
+
 export function readJson(path, fallback) {
   return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : fallback;
 }

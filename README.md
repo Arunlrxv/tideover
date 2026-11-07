@@ -37,7 +37,7 @@ Live app: to be added. No wallet is needed.
 7. Back on **Ask for help**, pick **A trick document**, which tells the reader to approve it. It should lose the fast path. If it fools the model, the claim is still capped by the tier and the auto limit, and it can be stopped in the veto window.
 8. Open **Trust** for what this does not hide, and to see whether the clerk is running in an enclave or on the demo's server.
 
-Without the app: `cd web && npm run e2e` runs the real flow against testnet and checks that the money moved.
+Without the app: `cd web && npm run e2e` runs the real flow against testnet and checks that the money moved. With only a NEAR AI key, `cd web && npm run model-check` runs the real prompt on the sample documents.
 
 ## How it fits Social Money
 
@@ -74,7 +74,8 @@ The [example prompt](https://github.com/nearai/near-hackathon-prompt-examples/bl
 |---|---|
 | Use the existing treasury, with no new multisig | Yes. The DAO holds the money and approves every payment. |
 | Reputation on named accounts, every point traceable | Yes. `get_record` lists each point's source, and a score is exactly their sum. Open **Records** to see it. |
-| Small payouts auto-approve, mid-size need one council member, large become a normal proposal | Yes, with one difference: mid-size claims go to three random members instead of one council member, so no single known person sees them all. |
+| Small payouts auto-approve, mid-size need one council member, large become a normal proposal | Yes. A fund chooses who decides mid-size claims on the **Install** page: one council member, or three random members. The demo uses three, so no single known person sees them all. |
+| A good record raises how much can be paid without a full council vote | Yes. A member's tier caps a claim at $100, then $300, then $800, and anything up to $400 avoids a council vote. |
 | A public board of open items, claims, payouts and records | Yes. **Ledger** shows claims and payouts, and **Records** shows each member's record. Claims carry no name, by design. |
 
 Design details: [docs/DESIGN.md](docs/DESIGN.md).
@@ -92,7 +93,7 @@ Design details: [docs/DESIGN.md](docs/DESIGN.md).
 
 | Item | State |
 |---|---|
-| Contract tests, with real proofs and a simulated clerk | 91 pass |
+| Contract tests, with real proofs and a simulated clerk | 94 pass |
 | Sealed clerk tests | 18 pass |
 | Membership library tests | 16 pass |
 | Secret ballot example tests | 5 pass |

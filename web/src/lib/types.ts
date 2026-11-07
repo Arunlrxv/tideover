@@ -14,6 +14,7 @@ export type Rules = {
   cycle_budget: string;
   panel_size: number;
   panel_quorum: number;
+  council_panel: boolean;
   review_window_secs: number;
   veto_window_secs: number;
   panel_window_secs: number;

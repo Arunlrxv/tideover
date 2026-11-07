@@ -24,6 +24,7 @@ import {
   USD,
   accountOf,
   actions,
+  aiKey,
   call,
   log,
   near,
@@ -84,6 +85,7 @@ const RULES = {
   cycle_budget: String(15_000n * USD),
   panel_size: 3,
   panel_quorum: 2,
+  council_panel: false,
   review_window_secs: 150,
   veto_window_secs: 45,
   panel_window_secs: 1800,
@@ -111,6 +113,29 @@ async function exists(id) {
   } catch {
     return false;
   }
+}
+
+/** What these contracts cost to store, in NEAR, rounded up to a hundredth. */
+function storageNear(...files) {
+  const bytes = files.reduce((sum, file) => sum + wasm(file).length, 0);
+  return Math.ceil(bytes / 1000) / 100;
+}
+
+/** Test NEAR can arrive at the implicit address after the named account exists. */
+async function sweepImplicit() {
+  const { account } = JSON.parse(readFileSync(join(ROOT, ".testnet", "funder.json"), "utf8"));
+  const balance = await provider
+    .viewAccount({ accountId: account })
+    .then((a) => BigInt(a.amount))
+    .catch(() => 0n);
+  if (balance < near(0.1)) return;
+  const r = await accountOf(account).signAndSendTransaction({
+    receiverId: MASTER,
+    actions: [actions.transfer(balance - near(0.01))],
+    throwOnFailure: false,
+  });
+  outcome(r);
+  log("moved", balance / 10n ** 21n, "milliNEAR from the implicit address");
 }
 
 async function ensureAccount(id, amount, extra = []) {
@@ -283,7 +308,7 @@ async function storeClerkSecrets(hash, apiKey) {
 
 async function pinEnclave() {
   if (!existsSync(CLERK_WASM)) throw new Error("build the clerk first: cargo build -p tideover-clerk --target wasm32-wasip2 --release");
-  const apiKey = process.env.NEAR_AI_API_KEY ?? existingAiKey();
+  const apiKey = aiKey();
   if (!apiKey) throw new Error("the clerk needs NEAR_AI_API_KEY, in the environment or in web/.env.local");
   const code = readFileSync(CLERK_WASM);
   const hash = sha256hex(code);
@@ -297,13 +322,6 @@ async function pinEnclave() {
   await pinClerk(keys, hash, `enclave build ${hash.slice(0, 12)}…`);
   S.clerk = { url, hash, keysTx: tx };
   save();
-}
-
-/** Keeps a key someone already put in web/.env.local. */
-function existingAiKey() {
-  const path = join(ROOT, "web", ".env.local");
-  if (!existsSync(path)) return "";
-  return readFileSync(path, "utf8").match(/^NEAR_AI_API_KEY=(.*)$/m)?.[1]?.trim() ?? "";
 }
 
 function writeOutputs() {
@@ -331,7 +349,7 @@ function writeOutputs() {
     `TIDEOVER_CLERK_WASM_HASH=${S.clerk?.hash ?? ""}`,
     // The enclave never uses this seed, so an enclave fund's server does not hold it.
     `TIDEOVER_CLERK_SEED=${S.clerk ? "" : S.clerkSeed}`,
-    `NEAR_AI_API_KEY=${process.env.NEAR_AI_API_KEY ?? existingAiKey()}`,
+    `NEAR_AI_API_KEY=${aiKey()}`,
     "",
   ].join("\n");
   writeJson(join(ROOT, ".testnet", "public.json"), { fund: FUND, dao: DAO, token: TOKEN });
@@ -346,6 +364,8 @@ async function main() {
   save();
   const demoPub = KeyPair.fromString(S.demoKey).getPublicKey();
 
+  await sweepImplicit();
+
   if (process.argv[2] === "enclave") {
     await pinEnclave();
     writeOutputs();
@@ -353,13 +373,13 @@ async function main() {
   }
 
   await step("accounts", async () => {
-    await ensureAccount(TOKEN, 3);
-    await ensureAccount(FACTORY, 7.6);
-    await ensureAccount(RELAY, 2.5);
-    await ensureAccount(JOINER, 1);
+    await ensureAccount(TOKEN, storageNear("tideover_test_usd.wasm") + 0.3);
+    await ensureAccount(FACTORY, storageNear("tideover_factory.wasm", "tideover_fund.wasm") + 0.2);
+    await ensureAccount(RELAY, 1.5);
+    await ensureAccount(JOINER, 0.5);
     // The DAO takes 6 NEAR, and a new DAO's first proposal needs a 1 NEAR bond.
-    await ensureAccount(COUNCIL[0], 7.8, [actions.addFunctionCallAccessKey(demoPub, DAO, ["act_proposal"], near(1))]);
-    for (const c of COUNCIL.slice(1)) await ensureAccount(c, 0.3, [actions.addFunctionCallAccessKey(demoPub, DAO, ["act_proposal"], near(1))]);
+    await ensureAccount(COUNCIL[0], 7.2, [actions.addFunctionCallAccessKey(demoPub, DAO, ["act_proposal"], near(1))]);
+    for (const c of COUNCIL.slice(1)) await ensureAccount(c, 0.2, [actions.addFunctionCallAccessKey(demoPub, DAO, ["act_proposal"], near(1))]);
   });
 
   await step("token", async () => {
@@ -400,7 +420,7 @@ async function main() {
     const deposit = BigInt(await view(FACTORY, "required_deposit"));
     const fundOutcome = await master.signAndSendTransaction({
       receiverId: DAO,
-      actions: [actions.transfer(deposit + near(1))],
+      actions: [actions.transfer(deposit + near(0.3))],
       throwOnFailure: false,
     });
     outcome(fundOutcome);
@@ -433,7 +453,7 @@ async function main() {
 
   await step("bonds", async () => {
     // Pays for proposal bonds, token registration and claim records through judging.
-    await call(master, FUND, "fund_bonds", {}, { deposit: near(2), tgas: 30 });
+    await call(master, FUND, "fund_bonds", {}, { deposit: near(0.5), tgas: 30 });
   });
 
   await step("seed-money", async () => {

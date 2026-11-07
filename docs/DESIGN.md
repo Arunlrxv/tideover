@@ -120,4 +120,5 @@ The fund pays NEAR for proposal bonds, which return on approval, and for token r
 
 - **Confidential treasuries.** Trezu and NEAR Business offer them, and a private balance would hide more. They run on a private shard and have no public integration surface yet, so this version uses a plain Sputnik DAO.
 - **Removing a claimant from their own panel.** Nobody knows who they are, so the quorum is the defence.
+- **One council member for every mid-size claim, by default.** A fund can choose that on the Install page, but the demo uses three random members, so that no single known person sees them all.
 - **Unmasking a fraudster.** Identity escrow would need threshold decryption in the circuit. It is the obvious next step if real funds need it.

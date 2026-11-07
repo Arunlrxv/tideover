@@ -4,7 +4,7 @@ These steps build a demo community on NEAR testnet. A real install on an existin
 
 ## You need
 
-- About 33 test NEAR.
+- About 26 test NEAR. Most of it pays for contract storage: the DAO takes 6, the factory about 7, and the fund and token about 9 between them.
 - `NEAR_AI_API_KEY` from [cloud.near.ai](https://cloud.near.ai), if you want the sealed reader on. Without it, claims go to people after the review window.
 
 ## Deploy the community
@@ -21,7 +21,7 @@ Create the master account. It waits out the faucet's rate limit by itself:
 cd web && node scripts/bootstrap-account.mjs tideover-hq.testnet
 ```
 
-Top the account up to about 33 NEAR at [near-faucet.io](https://near-faucet.io/), then deploy. Each step is recorded in `.testnet/secrets.json`, so a failed run can be repeated safely:
+The faucet's new account holds less than that, so top it up from [near-faucet.io](https://near-faucet.io/), which gives 2 NEAR a request, or send test NEAR from another account. The script also prints an implicit address, and anything sent there is moved across when you deploy. Each step is recorded in `.testnet/secrets.json`, so a run that stops for lack of funds can be repeated safely:
 
 ```bash
 cd web && node scripts/deploy.mjs

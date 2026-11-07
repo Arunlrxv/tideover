@@ -13,7 +13,7 @@ import { KeyPair, Account } from "near-api-js";
 import { MODEL_URL, clerkKeys, review, signCard } from "../src/lib/clerk.mjs";
 import { cardMessage, sealTo, sealedPayload, sha256hex } from "../src/lib/sealed.mjs";
 import init, { nullifier, prove_claim } from "../public/zk/tideover_wasm.js";
-import { DEPLOYMENT, ROOT, SECRETS, USD, actions, call, log, outcome, provider, readJson, teraToGas, view, writeJson } from "./lib.mjs";
+import { DEPLOYMENT, ROOT, SECRETS, USD, actions, aiKey, call, log, outcome, provider, readJson, teraToGas, view, writeJson } from "./lib.mjs";
 
 const D = readJson(DEPLOYMENT);
 const S = readJson(SECRETS);
@@ -24,7 +24,7 @@ const relayId = `relay.${D.fund.split(".").slice(2).join(".")}`;
 const relay = acct(relayId);
 const pk = readFileSync(join(ROOT, "keys", "membership.pk"));
 const clerk = clerkKeys(S.clerkSeed);
-const apiKey = process.env.NEAR_AI_API_KEY;
+const apiKey = aiKey();
 const results = [];
 
 const pass = (name, detail = "") => {

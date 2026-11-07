@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { getPolicy, view, type Policy } from "@/lib/chain";
 import { D, accountUrl } from "@/lib/config";
-import { cliCommand, createFundProposal, defaultRules, fundAccount, roleProposal } from "@/lib/install";
+import { cliCommand, createFundProposal, defaultRules, fundAccount, roleProposal, type MidSize } from "@/lib/install";
 import { createFundTemplate, fundTemplates } from "@/lib/trezu.mjs";
 import type { FundView } from "@/lib/types";
 
@@ -37,6 +37,7 @@ export default function InstallPage() {
   const [signer, setSigner] = useState("");
   const [dues, setDues] = useState(10);
   const [guardian, setGuardian] = useState("");
+  const [midSize, setMidSize] = useState<MidSize>("members");
   const [check, setCheck] = useState<Check | null>(null);
   const [newFund, setNewFund] = useState<NewFund | null>(null);
   const [error, setError] = useState("");
@@ -62,19 +63,19 @@ export default function InstallPage() {
   const commands = useMemo(() => {
     if (!check) return null;
     const bond = check.policy.proposal_bond;
-    const input = { dao: check.dao, name, guardian, duesDollars: dues, bond, proposalPeriod: check.policy.proposal_period, deposit: check.deposit };
+    const input = { dao: check.dao, name, guardian, duesDollars: dues, bond, proposalPeriod: check.policy.proposal_period, deposit: check.deposit, midSize };
     return {
       fund: cliCommand(check.dao, createFundProposal(input), bond, signer),
       role: cliCommand(check.dao, roleProposal(name), bond, signer),
     };
-  }, [check, name, guardian, dues, signer]);
+  }, [check, name, guardian, dues, signer, midSize]);
 
   const templates = useMemo(() => {
     if (!check) return null;
-    const rules = defaultRules(dues, check.policy.proposal_bond, check.policy.proposal_period);
+    const rules = defaultRules(dues, check.policy.proposal_bond, check.policy.proposal_period, midSize);
     const create = createFundTemplate({ factory: D.factory, dao: check.dao, token: D.token, deposit: check.deposit, rules, dues: rules.dues });
     return { create, everyday: fundTemplates(fundAccount(name || "my-community")) };
-  }, [check, dues, name]);
+  }, [check, dues, name, midSize]);
 
   const depositNear = check ? (Number(BigInt(check.deposit) / 10n ** 21n) / 1000).toFixed(2) : "about 6.6";
 
@@ -131,6 +132,14 @@ export default function InstallPage() {
               <span>Guardian account</span>
               <input type="text" value={guardian} onChange={(e) => setGuardian(e.target.value)} spellCheck={false} placeholder="optional" />
               <small>Can pause the fund or send a claim to the council.</small>
+            </label>
+            <label className="field">
+              <span>Who decides mid-size claims</span>
+              <select value={midSize} onChange={(e) => setMidSize(e.target.value as MidSize)}>
+                <option value="members">Three random members</option>
+                <option value="council">One council member</option>
+              </select>
+              <small>{midSize === "council" ? "Drawn from your guardians, so name one." : "No single known person sees them all."}</small>
             </label>
             <label className="field">
               <span>Your account</span>

@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test scripts/*.test.mjs",
     "deploy:testnet": "node scripts/deploy.mjs",
-    "e2e": "node scripts/e2e.mjs"
+    "e2e": "node scripts/e2e.mjs",
+    "model-check": "node --no-warnings scripts/model-check.mjs"
   },
   "dependencies": {
     "@hot-labs/near-connect": "0.12.0",

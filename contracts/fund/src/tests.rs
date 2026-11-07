@@ -92,6 +92,7 @@ fn rules() -> Rules {
         cycle_budget: U128(1000 * USD),
         panel_size: 3,
         panel_quorum: 2,
+        council_panel: false,
         review_window_secs: 300,
         veto_window_secs: 600,
         panel_window_secs: 3600,
@@ -391,6 +392,59 @@ fn a_new_member_with_no_history_has_an_empty_record() {
     w.join(&p, 0);
     assert!(w.c.get_record(p.account.clone()).is_empty());
     assert!(w.c.get_record(acc("stranger.testnet")).is_empty());
+}
+
+/// A mid-size claim in a fund that asks one council member instead of a member panel.
+fn council_panel_claim() -> (World, U64) {
+    let (mut w, _, id) = filed_claim(250 * USD);
+    let mut r = rules();
+    r.council_panel = true;
+    r.panel_size = 1;
+    r.panel_quorum = 1;
+    w.at(dao());
+    w.c.set_rules(r);
+    pin_clerk(&mut w);
+    let c = card("supported", false);
+    let signature = sign(&w, id, &c, &clerk_key());
+    post(&mut w, id, c, signature);
+    (w, id)
+}
+
+#[test]
+fn a_fund_can_ask_one_council_member_instead_of_a_panel() {
+    let (mut w, id) = council_panel_claim();
+    assert_eq!(status(&w, id), ClaimStatus::PanelVoting);
+    assert_eq!(w.c.get_claim(id).unwrap().panel, vec![guardian()]);
+
+    w.at(guardian());
+    w.c.panel_vote(id, true);
+    assert_eq!(status(&w, id), ClaimStatus::Approved);
+    assert!(
+        w.c.get_record(guardian()).is_empty(),
+        "a guardian need not be a member"
+    );
+}
+
+#[test]
+#[should_panic(expected = "You are not on this panel")]
+fn a_member_cannot_vote_on_a_council_panel() {
+    let (mut w, id) = council_panel_claim();
+    w.at(acc("ben.testnet"));
+    w.c.panel_vote(id, true);
+}
+
+#[test]
+fn a_fund_with_too_few_guardians_sends_the_claim_to_the_council() {
+    let (mut w, _, id) = filed_claim(250 * USD);
+    let mut r = rules();
+    r.council_panel = true;
+    w.at(dao());
+    w.c.set_rules(r);
+    pin_clerk(&mut w);
+    let c = card("supported", false);
+    let signature = sign(&w, id, &c, &clerk_key());
+    post(&mut w, id, c, signature);
+    assert_eq!(status(&w, id), ClaimStatus::NeedsCouncil);
 }
 
 #[test]

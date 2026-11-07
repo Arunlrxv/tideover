@@ -35,6 +35,9 @@ pub struct Rules {
     pub cycle_budget: U128,
     pub panel_size: u8,
     pub panel_quorum: u8,
+    /// Draws the panel from the guardians instead of paid-up members. With a panel
+    /// of one, a mid-size claim then needs one council member and nobody else.
+    pub council_panel: bool,
     pub review_window_secs: u64,
     pub veto_window_secs: u64,
     pub panel_window_secs: u64,

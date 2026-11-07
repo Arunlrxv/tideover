@@ -624,11 +624,13 @@ impl Contract {
             approve,
         });
 
-        // Serving earns points, whichever way the vote went.
-        let mut member = self.member_of(&voter);
-        member.service_points += 1;
-        self.members.insert(voter.clone(), member);
-        self.note(&voter, PointSource::Panel { claim: claim.id });
+        // Serving earns points, whichever way the vote went. A guardian on a council
+        // panel need not be a member, and then has no record to add to.
+        if let Some(mut member) = self.members.get(&voter).cloned() {
+            member.service_points += 1;
+            self.members.insert(voter.clone(), member);
+            self.note(&voter, PointSource::Panel { claim: claim.id });
+        }
 
         let quorum = self.rules.panel_quorum as usize;
         let yes = claim.votes.iter().filter(|v| v.approve).count();
@@ -1097,23 +1099,26 @@ impl Contract {
         );
     }
 
-    /// Draws the panel from paid-up members. The claimant is one of them and
-    /// cannot be excluded, because nobody knows who they are; the quorum is what
-    /// stops them deciding alone.
+    /// Draws the panel from paid-up members, or from the guardians if the fund asks
+    /// for that. A claimant among the members cannot be excluded, because nobody
+    /// knows who they are; the quorum is what stops them deciding alone.
     fn draw_panel(&self, claim_id: u64) -> Option<Vec<AccountId>> {
         let size = self.rules.panel_size as usize;
         let current = self.current_period();
-        let mut eligible: Vec<AccountId> = self
-            .roster
-            .iter()
-            .take(MAX_ROSTER_SCAN as usize)
-            .filter(|a| {
-                self.members
-                    .get(*a)
-                    .is_some_and(|m| m.active && self.is_paid_up(m, current))
-            })
-            .cloned()
-            .collect();
+        let mut eligible: Vec<AccountId> = if self.rules.council_panel {
+            self.guardians.clone()
+        } else {
+            self.roster
+                .iter()
+                .take(MAX_ROSTER_SCAN as usize)
+                .filter(|a| {
+                    self.members
+                        .get(*a)
+                        .is_some_and(|m| m.active && self.is_paid_up(m, current))
+                })
+                .cloned()
+                .collect()
+        };
         if eligible.len() < size {
             return None;
         }

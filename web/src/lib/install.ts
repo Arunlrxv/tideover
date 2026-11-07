@@ -5,7 +5,10 @@ const USD = 1_000_000n;
 const usd = (n: bigint) => String(n * USD);
 
 /** Sensible starting rules for a real community, with days rather than the demo's seconds. */
-export function defaultRules(duesDollars: number, proposalBond: string, proposalPeriodNs: string) {
+/** Who decides a mid-size claim: three random members, or one guardian. */
+export type MidSize = "members" | "council";
+
+export function defaultRules(duesDollars: number, proposalBond: string, proposalPeriodNs: string, midSize: MidSize = "members") {
   const day = 24 * 3600;
   const proposalSecs = Number(BigInt(proposalPeriodNs) / 1_000_000_000n);
   return {
@@ -23,8 +26,9 @@ export function defaultRules(duesDollars: number, proposalBond: string, proposal
     auto_limit: usd(100n),
     panel_limit: usd(400n),
     cycle_budget: usd(1500n),
-    panel_size: 3,
-    panel_quorum: 2,
+    panel_size: midSize === "council" ? 1 : 3,
+    panel_quorum: midSize === "council" ? 1 : 2,
+    council_panel: midSize === "council",
     review_window_secs: 3600,
     veto_window_secs: day,
     panel_window_secs: 3 * day,
@@ -45,6 +49,7 @@ export type InstallInput = {
   bond: string;
   proposalPeriod: string;
   deposit: string;
+  midSize: MidSize;
 };
 
 export const fundAccount = (name: string) => `${name}.${D.factory}`;
@@ -54,7 +59,7 @@ export function createFundProposal(i: InstallInput) {
     name: i.name,
     dao: i.dao,
     token: D.token,
-    rules: defaultRules(i.duesDollars, i.bond, i.proposalPeriod),
+    rules: defaultRules(i.duesDollars, i.bond, i.proposalPeriod, i.midSize),
     guardians: i.guardian ? [i.guardian] : [],
     registrar: null,
   };
