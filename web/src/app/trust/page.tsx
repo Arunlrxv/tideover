@@ -148,11 +148,9 @@ export default function TrustPage() {
 
 function ReaderCheck() {
   const { data } = useLive(async () => {
-    const fund = await getFund();
-    const res = await fetch(`https://cloud-api.near.ai/v1/attestation/report?model=${encodeURIComponent(MODEL)}&signing_algo=ed25519`);
+    const [fund, res] = await Promise.all([getFund(), fetch("/api/attestation")]);
     const report = res.ok ? await res.json() : null;
-    const live = report?.model_attestations?.[0];
-    return { fund, attested: (live?.signing_public_key ?? live?.signing_address ?? "").replace(/^0x/, "") as string };
+    return { fund, attested: (report?.attested ?? "") as string };
   }, 60000);
   const pinned = data?.fund.reviewer?.signer;
   const localPrompt = sha256hex(PROMPT);

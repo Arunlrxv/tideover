@@ -2838,6 +2838,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tideover-anon-poll"
+version = "0.1.0"
+dependencies = [
+ "ark-bls12-381",
+ "ark-groth16",
+ "hex",
+ "near-sdk",
+ "tideover-zk",
+]
+
+[[package]]
 name = "tideover-factory"
 version = "0.1.0"
 dependencies = [

@@ -434,11 +434,18 @@ code,
   gap: 5px;
   padding: 3px 9px;
   border-radius: 999px;
+  font-family: var(--font-sans), system-ui, sans-serif;
   font-size: 0.8rem;
   font-weight: 600;
+  letter-spacing: 0;
   white-space: nowrap;
   background: var(--paper-sunk);
   color: var(--ink-soft);
+}
+
+h1 .chip {
+  font-size: 0.95rem;
+  padding: 4px 11px;
 }
 
 .chip.good {
@@ -505,7 +512,7 @@ code,
 .ledger-head,
 .ledger-row {
   display: grid;
-  grid-template-columns: 76px minmax(90px, 0.8fr) minmax(120px, 1.1fr) minmax(130px, 1fr) minmax(110px, auto);
+  grid-template-columns: 56px 92px minmax(128px, 1fr) minmax(150px, 1.25fr) 138px;
   gap: 14px;
   align-items: center;
   padding: 13px 18px;

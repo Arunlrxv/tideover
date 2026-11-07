@@ -6,6 +6,7 @@ members = [
     "contracts/fund",
     "contracts/factory",
     "contracts/test-usd",
+    "contracts/anon-poll",
 ]
 
 [workspace.package]

@@ -449,8 +449,10 @@ fn a_new_cycle_allows_a_new_claim() {
 #[should_panic(expected = "limit for the year")]
 fn a_repeat_cheat_hits_the_yearly_limit() {
     let (mut w, amara, _) = filed_claim(300 * USD);
-    w.now += PERIOD * 3 + 1;
-    w.pay(&amara);
+    for _ in 0..3 {
+        w.now += PERIOD + 1;
+        w.pay(&amara);
+    }
     // $300 this year already, with $150 left of the $450 limit.
     let second = prove(&w, &amara, 2, 160 * USD, &payout());
     file(&mut w, second);

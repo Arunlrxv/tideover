@@ -401,20 +401,9 @@ impl Contract {
         // non-canonical value would otherwise count as a different member.
         let nullifier_fr = parse_field_fr(&nullifier, "nullifier");
         let nullifier_bytes = fr_to_bytes(&nullifier_fr);
-        let record = self.tags.get(&nullifier_bytes).cloned().unwrap_or_default();
-        require!(
-            record.last_cycle != Some(cycle),
-            "This member has already claimed this cycle"
-        );
-        require!(
-            record.used + amount.0 <= tier.year_cap.0,
-            "Above this member's limit for the year"
-        );
-        require!(
-            self.cycle_committed + amount.0 <= self.rules.cycle_budget.0,
-            "Above what is left in this cycle's budget"
-        );
 
+        // The proof comes before any check that reads a tag's history, so that an
+        // invalid proof learns nothing about anyone's record.
         let evidence_digest = review::unhex32(&evidence_sha256, "evidence hash");
         let fund = env::current_account_id();
         let scope = identity::scope(fund.as_str(), window);
@@ -433,6 +422,20 @@ impl Contract {
             Some(false) => env::panic_str("The membership proof does not verify"),
             None => env::panic_str("The membership proof is malformed"),
         }
+
+        let record = self.tags.get(&nullifier_bytes).cloned().unwrap_or_default();
+        require!(
+            record.last_cycle != Some(cycle),
+            "This member has already claimed this cycle"
+        );
+        require!(
+            record.used + amount.0 <= tier.year_cap.0,
+            "Above this member's limit for the year"
+        );
+        require!(
+            self.cycle_committed + amount.0 <= self.rules.cycle_budget.0,
+            "Above what is left in this cycle's budget"
+        );
 
         self.tags.insert(
             nullifier_bytes,
@@ -493,10 +496,6 @@ impl Contract {
         verdict_key: String,
     ) -> Card {
         let mut claim = self.claim_of(claim_id);
-        require!(
-            claim.status == ClaimStatus::AwaitingReview,
-            "This claim is not waiting for a review"
-        );
         let reviewer = self
             .reviewer
             .as_ref()
@@ -517,6 +516,11 @@ impl Contract {
             &case,
             &claim.nonce,
             &claim.evidence_sha256,
+        );
+        // Checked after the signature, so a forgery is refused as a forgery.
+        require!(
+            claim.status == ClaimStatus::AwaitingReview,
+            "This claim is not waiting for a review"
         );
         claim.card = Some(card.clone());
         claim.signed_text = Some(signed_text);

@@ -119,6 +119,16 @@ pub fn verify(
     nonce: &str,
     evidence_sha256_hex: &str,
 ) -> Card {
+    // The enclave's signature over MODEL:sha256(request):sha256(response). Nothing
+    // else is worth checking until this holds.
+    let sig: [u8; 64] = unhex(s.signature_hex, "signature")
+        .try_into()
+        .unwrap_or_else(|_| env::panic_str("signature must be 64 bytes"));
+    require!(
+        env::ed25519_verify(&sig, s.signed_text.as_bytes(), &r.signer),
+        "bad enclave signature"
+    );
+
     // Evidence: exactly the committed envelope, and only hex, so it cannot break
     // out of the JSON string below.
     require!(
@@ -145,14 +155,6 @@ pub fn verify(
     request.push_str(&r.max_tokens.to_string());
     request.push_str(",\"stream\":false}");
 
-    // The enclave's signature over MODEL:sha256(request):sha256(response).
-    let sig: [u8; 64] = unhex(s.signature_hex, "signature")
-        .try_into()
-        .unwrap_or_else(|_| env::panic_str("signature must be 64 bytes"));
-    require!(
-        env::ed25519_verify(&sig, s.signed_text.as_bytes(), &r.signer),
-        "bad enclave signature"
-    );
     let mut parts = s.signed_text.rsplitn(3, ':');
     let response_hash = parts.next().unwrap_or_default().to_ascii_lowercase();
     let request_hash = parts.next().unwrap_or_default().to_ascii_lowercase();

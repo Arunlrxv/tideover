@@ -7,8 +7,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { KeyPair, Account } from "near-api-js";
 import { MODEL, MAX_TOKENS, buildRequest, encryptTo, newClient, openWith, sha256hex, systemMessage } from "../src/lib/sealed.mjs";
-import init, { nullifier, prove_claim } from "../public/zk/tideover_wasm.js";
-import { DEPLOYMENT, ROOT, SECRETS, USD, actions, call, log, near, outcome, provider, readJson, teraToGas, view, writeJson } from "./lib.mjs";
+import init, { prove_claim } from "../public/zk/tideover_wasm.js";
+import { DEPLOYMENT, ROOT, SECRETS, USD, actions, call, log, outcome, provider, readJson, teraToGas, view, writeJson } from "./lib.mjs";
 
 const D = readJson(DEPLOYMENT);
 const S = readJson(SECRETS);
@@ -55,7 +55,7 @@ async function prepare(memberId, dollars, evidenceText, { payout, minTier } = {}
   const modelKey = fund.reviewer.signer;
   const evidence = encryptTo(modelKey, evidenceText);
   const evidence_sha256 = sha256hex(evidence.envelope);
-  const payoutId = payout ?? KeyPair.fromRandom("ed25519").getPublicKey().toString().length && freshImplicit();
+  const payoutId = payout ?? freshImplicit();
   const proofJson = JSON.parse(
     prove_claim(
       pk,
@@ -177,7 +177,12 @@ async function scenarioPanelClaim() {
 
   const demoKey = S.demoKey;
   for (const voter of c.panel.slice(0, 2)) {
-    await call(new Account(voter, provider, demoKey), FUND, "panel_vote", { claim_id: filed.id, approve: true }, { tgas: 30 });
+    // Panelists hold no NEAR for gas: each signs a delegate action and the relay pays.
+    const { signedDelegate } = await new Account(voter, provider, demoKey).createSignedMetaTransaction({
+      receiverId: FUND,
+      actions: [actions.functionCall("panel_vote", { claim_id: filed.id, approve: true }, teraToGas(30), 0n)],
+    });
+    outcome(await relay.signAndSendTransaction({ receiverId: voter, actions: [actions.signedDelegate(signedDelegate)], throwOnFailure: false }));
   }
   await waitForStatus(filed.id, "Approved", 15);
   const paid = await call(relay, FUND, "advance", { claim_id: filed.id }, { tgas: 300 });
@@ -253,11 +258,7 @@ async function attacks() {
         verdict_key: "00".repeat(32),
       },
       { tgas: 100 },
-    ).catch((e) => {
-      // The evidence check runs first; an envelope that matches its commitment reaches the signature.
-      if (e.message.includes("does not match its commitment")) throw new Error("bad enclave signature (evidence checked first)");
-      throw e;
-    }),
+    ),
   );
   await refused("only the DAO pins the reader", "Only the DAO", () =>
     call(relay, FUND, "set_reviewer", { model_id: MODEL, signer: "00".repeat(32), prompt_sha256: "00".repeat(32), max_tokens: MAX_TOKENS }, { tgas: 30 }),
@@ -278,8 +279,6 @@ async function main() {
   const ok = results.filter((r) => r.ok).length;
   log(`${ok} of ${results.length} checks passed`);
 }
-
-void nullifier;
 
 main().catch((e) => {
   console.error("FAILED:", e.message, e.hash ?? "");

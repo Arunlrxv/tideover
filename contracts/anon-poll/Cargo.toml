@@ -1,0 +1,21 @@
+[package]
+name = "tideover-anon-poll"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "A secret ballot for any NEAR group, as a worked example of tideover-zk"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk.workspace = true
+tideover-zk = { path = "../../crates/tideover-zk", default-features = false }
+hex.workspace = true
+
+[dev-dependencies]
+near-sdk = { workspace = true, features = ["unit-testing"] }
+tideover-zk = { path = "../../crates/tideover-zk", features = ["prover"] }
+ark-groth16 = { workspace = true, features = ["std"] }
+ark-bls12-381 = { workspace = true, features = ["std"] }
