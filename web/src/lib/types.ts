@@ -131,6 +131,7 @@ export type Deployment = {
   council: string[];
   guardians: string[];
   seededMembers: string[];
+  factoryLive?: boolean;
   clerk?: { keysTx?: string; keysSender?: string; wasmUrl?: string };
   transactions: Record<string, string>;
 };

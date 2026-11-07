@@ -13,7 +13,7 @@ import { ROOT, actions, log, near, outcome, provider, teraToGas } from "./lib.mj
 const HELPER = "https://helper.nearprotocol.com/account";
 const ACCOUNT = process.argv[2] ?? "tideover-hq.testnet";
 const KEY_FILE = join(ROOT, ".testnet", "funder.json");
-const CHECK_EVERY_MS = 300_000;
+const CHECK_EVERY_MS = 30_000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 if (!existsSync(KEY_FILE)) {
@@ -52,7 +52,8 @@ for (;;) {
     break;
   }
   const funded = await balanceOf(implicit);
-  if (funded !== null && funded >= near(1)) {
+  // A small amount is enough: the named account can then take top-ups from near-faucet.io.
+  if (funded !== null && funded >= near("0.1")) {
     log("the implicit address is funded; creating the named account from it");
     await createFromImplicit(funded);
     continue;

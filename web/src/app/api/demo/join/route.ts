@@ -28,7 +28,7 @@ export async function POST(req: Request) {
       receiverId: account,
       actions: [
         actions.createAccount(),
-        actions.transfer(BigInt(nearToYocto("0.02"))),
+        actions.transfer(BigInt(nearToYocto("0.01"))),
         actions.addFullAccessKey(PublicKey.fromString(publicKey)),
         actions.addFunctionCallAccessKey(demoPub, D.fund, ["panel_vote"], BigInt(nearToYocto("0.25"))),
       ],

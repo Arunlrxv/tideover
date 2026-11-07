@@ -81,7 +81,7 @@ async function gasless(m: LocalMember, receiverId: string, method: string, args:
 }
 
 export const payDues = (m: LocalMember, dues: string) =>
-  gasless(m, D.token, "ft_transfer_call", { receiver_id: D.fund, amount: dues, msg: "dues" }, 120, 1n);
+  gasless(m, D.token, "ft_transfer_call", { receiver_id: D.fund, amount: dues, msg: "dues" }, 200, 1n);
 
 export const voteOnPanel = (m: LocalMember, claimId: string, approve: boolean) =>
   gasless(m, D.fund, "panel_vote", { claim_id: claimId, approve }, 30);

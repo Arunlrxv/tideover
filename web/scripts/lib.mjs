@@ -6,7 +6,8 @@ import { Account, FailoverRpcProvider, JsonRpcProvider, actions, nearToYocto, te
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const ROOT = join(here, "..", "..");
-export const WASM_DIR = join(ROOT, "target", "wasm32-unknown-unknown", "release");
+/** Where npm run build:contracts leaves the contracts. */
+export const WASM_DIR = join(ROOT, "target", "near");
 export const DEPLOYMENT = join(ROOT, "web", "src", "deployment.json");
 export const SECRETS = join(ROOT, ".testnet", "secrets.json");
 

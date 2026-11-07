@@ -4,15 +4,15 @@ These steps build a demo community on NEAR testnet. A real install on an existin
 
 ## You need
 
-- About 26 test NEAR. Most of it pays for contract storage: the DAO takes 6, the factory about 7, and the fund and token about 9 between them.
+- About 12 test NEAR. Most of it locks contract storage: 5.5 for the DAO, 3.7 for the fund and 1.5 for the token. Adding the factory later takes about 5 more.
 - `NEAR_AI_API_KEY` from the API Keys page at [cloud.near.ai](https://cloud.near.ai), if you want the sealed reader on. It starts with `sk-`. Without it, claims go to people after the review window. `npm run model-check` tries it on the sample documents before anything is deployed.
 
 ## Deploy the community
 
-Build the contracts. Plain `cargo` output is accepted from protocol 84 on, which added bulk memory and reference types. Mainnet and testnet are at 88.
+Build the contracts as small as they go, because every kilobyte locks 0.01 NEAR. Output from current Rust is accepted from protocol 84 on, which added bulk memory and reference types. Mainnet and testnet are at 88.
 
 ```bash
-cargo build -p tideover-fund -p tideover-factory -p tideover-test-usd --target wasm32-unknown-unknown --release
+cd web && npm run build:contracts
 ```
 
 Create the master account. It waits out the faucet's rate limit by itself:
@@ -28,6 +28,12 @@ cd web && node scripts/deploy.mjs
 ```
 
 This writes `web/src/deployment.json`, which is public, and `web/.env.local`, which holds keys and is ignored by git.
+
+To save test NEAR, this creates the demo fund directly, the way the factory does: same account name, same code, no keys. To add the factory, so that any DAO can install a fund with the Install page's proposals:
+
+```bash
+cd web && node scripts/deploy.mjs factory
+```
 
 Run the real flow. A fixed test card proves everything on chain except the model, so this spends no credits, and the report says which it was. Add `-- --model` to have the real model read each document, which is two requests for a full run:
 

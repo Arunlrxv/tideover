@@ -1,10 +1,12 @@
 // Deploys the Harbor demo community on NEAR testnet, one idempotent step at a time.
 //
-//   node scripts/deploy.mjs                    run every step that has not run yet
+//   node scripts/deploy.mjs            run every step that has not run yet
 //   node scripts/deploy.mjs enclave    put the built clerk on OutLayer and pin it
+//   node scripts/deploy.mjs factory    add the factory, so any DAO can install a fund
 //
-// A real install is steps "fund" and "role": two ordinary proposals on an existing
-// DAO. Everything else here only builds a demo community to install it on.
+// This spends as little test NEAR as it can, about 12. To save the 5 a factory locks, the
+// demo fund is created directly, as the factory would create it: same account name, same
+// code, no keys. The factory can be added to that account later.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Account, KeyPair } from "near-api-js";
@@ -47,6 +49,10 @@ const CLERK_WASM = join(ROOT, "target", "wasm32-wasip2", "release", "tideover-cl
 const CLERK_PROFILE = "clerk";
 /** Recorded on chain instead of a build hash, so a server clerk can't pass for an enclave. */
 const SERVER_CLERK = "server-demo";
+/** A new DAO locks about 5.41 NEAR. The rest pays for its proposals' storage. */
+const DAO_DEPOSIT = 5.55;
+/** Claims cost the fund about 0.02 NEAR each in storage. It can be topped up at any time. */
+const FUND_WORKING_NEAR = 0.3;
 
 const sub = (label) => `${label}.${MASTER}`;
 const TOKEN = sub("usd");
@@ -56,16 +62,14 @@ const JOINER = sub("m");
 const DAO = `${DAO_NAME}.${DAO_FACTORY}`;
 const FUND = `${FUND_LABEL}.${FACTORY}`;
 const COUNCIL = ["maya", "tomas", "ines"].map(sub);
-// Twelve points reach the top tier, and these three make that group big enough to claim from.
+// Twelve points reach the top tier, and three members there make a group big enough to
+// claim from. Five members fill a panel of three with some choice left.
 const MEMBERS = [
   ["amara", 13],
   ["ben", 12],
   ["chi", 12],
   ["dara", 7],
   ["eli", 6],
-  ["farah", 5],
-  ["goran", 4],
-  ["hana", 3],
 ];
 
 const RULES = {
@@ -89,10 +93,28 @@ const RULES = {
   review_window_secs: 150,
   veto_window_secs: 45,
   panel_window_secs: 1800,
-  // Sputnik's default voting period is seven days. This is a day past it.
+  // The DAO's voting period below is seven days. This is a day past it.
   council_window_secs: 8 * 24 * 3600,
-  proposal_bond: String(near("0.1")),
+  proposal_bond: String(near("0.01")),
   token_decimals: 6,
+};
+
+const DAYS_NS = 24n * 3600n * 1_000_000_000n;
+// Set at creation, so the DAO needs no first proposal, and no 1 NEAR default bond, to change it.
+const POLICY = {
+  roles: [
+    {
+      name: "council",
+      kind: { Group: COUNCIL },
+      permissions: ["*:AddProposal", "*:VoteApprove", "*:VoteReject", "*:VoteRemove", "*:Finalize"],
+      vote_policy: {},
+    },
+  ],
+  default_vote_policy: { weight_kind: "RoleWeight", quorum: "0", threshold: [1, 2] },
+  proposal_bond: RULES.proposal_bond,
+  proposal_period: String(7n * DAYS_NS),
+  bounty_bond: RULES.proposal_bond,
+  bounty_forgiveness_period: String(DAYS_NS),
 };
 
 const S = readJson(SECRETS, { keys: {}, secrets: {}, done: {}, txs: {} });
@@ -336,6 +358,7 @@ function writeOutputs() {
     council: COUNCIL,
     guardians: [COUNCIL[0]],
     seededMembers: MEMBERS.map(([n]) => sub(n)),
+    factoryLive: Boolean(S.done.factory),
     clerk: S.clerk ? { keysTx: S.clerk.keysTx, keysSender: RELAY, wasmUrl: S.clerk.url } : {},
     transactions: S.txs,
   });
@@ -372,14 +395,28 @@ async function main() {
     return;
   }
 
+  if (process.argv[2] === "factory") {
+    await step("factory", async () => {
+      const needed = storageNear("tideover_factory.wasm", "tideover_fund.wasm") + 0.1;
+      outcome(await master.signAndSendTransaction({ receiverId: FACTORY, actions: [actions.transfer(near(needed))], throwOnFailure: false }));
+      await deployAndInit(FACTORY, "tideover_factory.wasm", "new", { owner: FACTORY });
+      await acct(FACTORY).signAndSendTransaction({
+        receiverId: FACTORY,
+        actions: [actions.functionCall("set_code", wasm("tideover_fund.wasm"), teraToGas(100), 0n)],
+      });
+      log("  a new fund needs", (await view(FACTORY, "required_deposit")).toString(), "yoctoNEAR");
+    });
+    writeOutputs();
+    return;
+  }
+
   await step("accounts", async () => {
-    await ensureAccount(TOKEN, storageNear("tideover_test_usd.wasm") + 0.3);
-    await ensureAccount(FACTORY, storageNear("tideover_factory.wasm", "tideover_fund.wasm") + 0.2);
-    await ensureAccount(RELAY, 1.5);
-    await ensureAccount(JOINER, 0.5);
-    // The DAO takes 6 NEAR, and a new DAO's first proposal needs a 1 NEAR bond.
-    await ensureAccount(COUNCIL[0], 7.2, [actions.addFunctionCallAccessKey(demoPub, DAO, ["act_proposal"], near(1))]);
-    for (const c of COUNCIL.slice(1)) await ensureAccount(c, 0.2, [actions.addFunctionCallAccessKey(demoPub, DAO, ["act_proposal"], near(1))]);
+    await ensureAccount(TOKEN, storageNear("tideover_test_usd.wasm") + 0.1);
+    await ensureAccount(FACTORY, storageNear("tideover_fund.wasm") + FUND_WORKING_NEAR + 0.03);
+    await ensureAccount(RELAY, 0.4);
+    await ensureAccount(JOINER, 0.1);
+    await ensureAccount(COUNCIL[0], DAO_DEPOSIT + 0.1, [actions.addFunctionCallAccessKey(demoPub, DAO, ["act_proposal"], near(0.5))]);
+    for (const c of COUNCIL.slice(1)) await ensureAccount(c, 0.05, [actions.addFunctionCallAccessKey(demoPub, DAO, ["act_proposal"], near(0.5))]);
   });
 
   await step("token", async () => {
@@ -390,44 +427,28 @@ async function main() {
     const args = Buffer.from(
       JSON.stringify({
         config: { name: DAO_NAME, purpose: "Harbor Mutual, a demo community for Tideover on NEAR testnet", metadata: "" },
-        policy: COUNCIL,
+        policy: POLICY,
       }),
     ).toString("base64");
-    const r = await call(acct(COUNCIL[0]), DAO_FACTORY, "create", { name: DAO_NAME, args }, { deposit: near(6), tgas: 300 });
+    const r = await call(acct(COUNCIL[0]), DAO_FACTORY, "create", { name: DAO_NAME, args }, { deposit: near(DAO_DEPOSIT), tgas: 300 });
     S.txs["Create the DAO"] = r.hash;
   });
 
-  await step("bond", async () => {
-    await propose("Lower the proposal bond to 0.1 NEAR for the demo", {
-      ChangePolicyUpdateParameters: {
-        parameters: { proposal_bond: RULES.proposal_bond, proposal_period: null, bounty_bond: null, bounty_forgiveness_period: null },
-      },
-    });
-  });
-
-  await step("factory", async () => {
-    await deployAndInit(FACTORY, "tideover_factory.wasm", "new", { owner: FACTORY });
-    await acct(FACTORY).signAndSendTransaction({
-      receiverId: FACTORY,
-      actions: [actions.functionCall("set_code", wasm("tideover_fund.wasm"), teraToGas(100), 0n)],
-    });
-    log("  factory holds the fund code; a fund needs", (await view(FACTORY, "required_deposit")).toString(), "yoctoNEAR");
-  });
-
-  // ---- A real install is these two proposals. ----
+  // ---- As the factory would do it: same name, same code, and no access keys. ----
 
   await step("fund", async () => {
-    const deposit = BigInt(await view(FACTORY, "required_deposit"));
-    const fundOutcome = await master.signAndSendTransaction({
-      receiverId: DAO,
-      actions: [actions.transfer(deposit + near(0.3))],
-      throwOnFailure: false,
-    });
-    outcome(fundOutcome);
-    const args = { name: FUND_LABEL, dao: DAO, token: TOKEN, rules: RULES, guardians: [COUNCIL[0]], registrar: RELAY };
-    await propose(
-      "Install Tideover: create our fund, with its rules",
-      functionCallKind(FACTORY, "create_fund", args, deposit, teraToGas(220)),
+    const args = { dao: DAO, token: TOKEN, rules: RULES, guardians: [COUNCIL[0]], registrar: RELAY };
+    outcome(
+      await acct(FACTORY).signAndSendTransaction({
+        receiverId: FUND,
+        actions: [
+          actions.createAccount(),
+          actions.transfer(near(storageNear("tideover_fund.wasm") + FUND_WORKING_NEAR)),
+          actions.deployContract(wasm("tideover_fund.wasm")),
+          actions.functionCall("new", args, teraToGas(30), 0n),
+        ],
+        throwOnFailure: false,
+      }),
     );
     if (!(await exists(FUND))) throw new Error("the fund account was not created");
   });
@@ -451,11 +472,6 @@ async function main() {
     await pinClerk(clerkKeys(S.clerkSeed), SERVER_CLERK, "the demo server's clerk, until an enclave build is pinned");
   });
 
-  await step("bonds", async () => {
-    // Pays for proposal bonds, token registration and claim records through judging.
-    await call(master, FUND, "fund_bonds", {}, { deposit: near(0.5), tgas: 30 });
-  });
-
   await step("seed-money", async () => {
     for (const id of [DAO, FUND]) {
       await call(acct(TOKEN), TOKEN, "mint", { account_id: id, amount: String(id === DAO ? 20_000n * USD : 0n) });
@@ -466,7 +482,7 @@ async function main() {
     const relay = acct(RELAY);
     for (const [name, prior] of MEMBERS) {
       const id = sub(name);
-      await ensureAccount(id, 0.02, [actions.addFunctionCallAccessKey(demoPub, FUND, ["panel_vote"], near(0.25))]);
+      await ensureAccount(id, 0.01, [actions.addFunctionCallAccessKey(demoPub, FUND, ["panel_vote"], near(0.25))]);
       S.secrets[id] ??= new_secret(crypto.getRandomValues(new Uint8Array(32)));
       save();
       if (!(await view(FUND, "get_member", { account: id }))) {
@@ -485,7 +501,7 @@ async function main() {
       const member = acct(id);
       const { signedDelegate } = await member.createSignedMetaTransaction({
         receiverId: TOKEN,
-        actions: [actions.functionCall("ft_transfer_call", { receiver_id: FUND, amount: RULES.dues, msg: "dues" }, teraToGas(120), 1n)],
+        actions: [actions.functionCall("ft_transfer_call", { receiver_id: FUND, amount: RULES.dues, msg: "dues" }, teraToGas(200), 1n)],
       });
       const r = await relay.signAndSendTransaction({ receiverId: id, actions: [actions.signedDelegate(signedDelegate)], throwOnFailure: false });
       const o = outcome(r);

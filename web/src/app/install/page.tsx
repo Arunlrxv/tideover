@@ -46,7 +46,7 @@ export default function InstallPage() {
     setError("");
     setCheck(null);
     try {
-      const [policy, deposit] = await Promise.all([getPolicy(dao.trim()), view<string>(D.factory, "required_deposit")]);
+      const [policy, deposit] = await Promise.all([getPolicy(dao.trim()), D.factoryLive ? view<string>(D.factory, "required_deposit") : "0"]);
       setCheck({ dao: dao.trim(), policy, hasFundRole: policy.roles.some((r) => r.name === "tideover"), deposit });
     } catch {
       setError("That account does not look like a Sputnik DAO on testnet.");
@@ -88,6 +88,13 @@ export default function InstallPage() {
           Tideover does not ask a community to move its money or change its multisig. The treasury stays in the Sputnik DAO you
           already run, and members vote as they always do.
         </p>
+
+        {D.fund && !D.factoryLive && (
+          <div className="notice warn">
+            The factory isn&apos;t on testnet right now, because it locks test NEAR the demo doesn&apos;t need. The demo fund was created
+            directly, the same way the factory does it, so the proposals below show what an install looks like but won&apos;t run yet.
+          </div>
+        )}
 
         <div className="card">
           <h3>1. Check your DAO</h3>

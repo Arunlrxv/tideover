@@ -9,6 +9,7 @@
     "start": "next start --port 3100",
     "typecheck": "tsc --noEmit",
     "test": "node --test scripts/*.test.mjs",
+    "build:contracts": "node scripts/build-contracts.mjs",
     "deploy:testnet": "node scripts/deploy.mjs",
     "e2e": "node scripts/e2e.mjs",
     "model-check": "node --no-warnings scripts/model-check.mjs"
@@ -29,6 +30,7 @@
     "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "binaryen": "^123.0.0",
     "typescript": "5.9.3"
   }
 }

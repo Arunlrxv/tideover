@@ -42,7 +42,13 @@ anyhow = "1"
 [profile.dev.package."*"]
 opt-level = 3
 
-# NEAR wasm: instruction count is gas, so optimise for speed rather than size.
+# What npm run build:contracts deploys. Storage costs far more than the extra gas here:
+# a kilobyte of code locks 0.01 NEAR, and a million wasm instructions burn under 0.0001.
+[profile.contract]
+inherits = "release"
+opt-level = "z"
+
+# Native tools, the clerk and the browser prover, where speed is what counts.
 [profile.release]
 opt-level = 3
 lto = true
