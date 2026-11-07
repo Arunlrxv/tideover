@@ -5,7 +5,7 @@
 //
 // A real install is steps "fund" and "role": two ordinary proposals on an existing
 // DAO. Everything else here only builds a demo community to install it on.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { KeyPair } from "near-api-js";
 import { MAX_TOKENS, MODEL, PROMPT, sha256hex } from "../src/lib/sealed.mjs";
@@ -175,6 +175,13 @@ async function pinReviewer() {
   log("  pinned", signer);
 }
 
+/** Keeps a key someone already put in web/.env.local. */
+function existingAiKey() {
+  const path = join(ROOT, "web", ".env.local");
+  if (!existsSync(path)) return "";
+  return readFileSync(path, "utf8").match(/^NEAR_AI_API_KEY=(.*)$/m)?.[1]?.trim() ?? "";
+}
+
 function writeOutputs() {
   writeJson(DEPLOYMENT, {
     network: "testnet",
@@ -195,7 +202,7 @@ function writeOutputs() {
     `TIDEOVER_JOINER_ACCOUNT=${JOINER}`,
     `TIDEOVER_JOINER_KEY=${keyOf(JOINER)}`,
     `TIDEOVER_DEMO_KEY=${S.demoKey}`,
-    `NEAR_AI_API_KEY=${process.env.NEAR_AI_API_KEY ?? ""}`,
+    `NEAR_AI_API_KEY=${process.env.NEAR_AI_API_KEY ?? existingAiKey()}`,
     "",
   ].join("\n");
   writeJson(join(ROOT, ".testnet", "public.json"), { fund: FUND, dao: DAO, token: TOKEN });
