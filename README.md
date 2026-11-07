@@ -70,6 +70,7 @@ Design details: [docs/DESIGN.md](docs/DESIGN.md).
 | Contract tests, with real proofs and a simulated enclave | 57 pass |
 | Membership library tests | 16 pass |
 | Secret ballot example tests | 5 pass |
+| Browser crypto tests | 8 pass |
 | Browser proof accepted by the contract logic | Pass, golden test |
 | Browser-sealed review accepted by the contract logic | Pass, golden test, with a test enclave key |
 | Proof time in a real browser | 2.9 s |
