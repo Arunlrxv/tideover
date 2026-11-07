@@ -290,6 +290,11 @@ async function main() {
 
   await step("reviewer", pinReviewer);
 
+  await step("bonds", async () => {
+    // Pays for proposal bonds, token registration and claim records through judging.
+    await call(master, FUND, "fund_bonds", {}, { deposit: near(2), tgas: 30 });
+  });
+
   await step("seed-money", async () => {
     for (const id of [DAO, FUND]) {
       await call(acct(TOKEN), TOKEN, "mint", { account_id: id, amount: String(id === DAO ? 20_000n * USD : 0n) });
