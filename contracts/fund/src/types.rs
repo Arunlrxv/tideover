@@ -140,6 +140,29 @@ pub struct Leaf {
     pub tier: u8,
 }
 
+/// Where a change to a member's score came from.
+#[near(serializers = [json, borsh])]
+#[derive(Clone, Debug, PartialEq)]
+pub enum PointSource {
+    /// Months the community carried over when it admitted them.
+    Carried { months: u32 },
+    /// Dues paid for a period, worth one point.
+    Dues { period: u64 },
+    /// Service on a claim's panel, worth one point.
+    Panel { claim: U64 },
+    /// A long gap in dues halved their paid months.
+    Lapsed { lost: u32 },
+}
+
+/// One line of a member's public record. A score is exactly the sum of these, so
+/// every point traces back to what earned it.
+#[near(serializers = [json, borsh])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RecordEntry {
+    pub at: U64,
+    pub source: PointSource,
+}
+
 /// One anonymous member's record for one window. The key is their tag, so the
 /// contract can count their claims without learning who they are.
 #[near(serializers = [borsh])]

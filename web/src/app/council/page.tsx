@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useLive } from "@/components/Ledger";
 import { getProposal, listClaims, type Proposal } from "@/lib/chain";
 import { D, accountUrl, txUrl } from "@/lib/config";
-import { shortAccount, usd } from "@/lib/format";
+import { proposalTitle, shortAccount, usd } from "@/lib/format";
 import { advance, api } from "@/lib/member";
 import type { Claim } from "@/lib/types";
 
@@ -82,7 +82,7 @@ function Row({ claim, proposal }: Item) {
       {proposal && (
         <>
           <p className="muted">
-            DAO proposal #{proposal.id}: &ldquo;{proposal.description}&rdquo;
+            DAO proposal #{proposal.id}: &ldquo;{proposalTitle(proposal.description)}&rdquo;
           </p>
           <ul className="leaves">
             {D.council.map((m) => {

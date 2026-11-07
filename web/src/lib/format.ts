@@ -1,5 +1,5 @@
 import { D } from "./config";
-import type { Card, Claim, ClaimStatus, Route } from "./types";
+import type { Card, Claim, ClaimStatus, RecordEntry, Route } from "./types";
 
 const UNIT = 10 ** D.tokenDecimals;
 
@@ -105,6 +105,17 @@ export function cardLines(card: Card) {
     ["Overall", ASSESSMENT_LABEL[card.assessment] ?? card.assessment],
   ] as const;
 }
+
+/** A line of a member's record: how many points, and what for. */
+export function pointLine({ source }: RecordEntry): { points: number; what: string; claim?: string } {
+  if ("Carried" in source) return { points: source.Carried.months, what: "Months carried over when the DAO admitted them" };
+  if ("Dues" in source) return { points: 1, what: `Paid dues for month ${source.Dues.period + 1}` };
+  if ("Panel" in source) return { points: 1, what: "Served on a panel", claim: source.Panel.claim };
+  return { points: -source.Lapsed.lost, what: "A long gap in dues halved their paid months" };
+}
+
+/** A proposal's title, from the fields Trezu reads. */
+export const proposalTitle = (description: string) => description.match(/^\* Title: (.*?)\s*(<br>|$)/)?.[1] ?? description;
 
 export const isOpen = (c: Claim) => c.status !== "Paid" && c.status !== "Rejected";
 

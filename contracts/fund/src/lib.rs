@@ -78,6 +78,7 @@ enum StorageKey {
     Tags,
     Claims,
     PeriodTiers,
+    Records,
 }
 
 #[near(contract_state)]
@@ -93,6 +94,9 @@ pub struct Contract {
 
     members: LookupMap<AccountId, Member>,
     roster: Vector<AccountId>,
+    /// How each member earned their score. Membership is public, so this is too,
+    /// and nothing in it connects a member to a claim of their own.
+    records: LookupMap<AccountId, Vec<RecordEntry>>,
 
     tree: Frontier,
     leaves: Vector<[u8; 32]>,
@@ -137,6 +141,7 @@ impl Contract {
             started_at: env::block_timestamp(),
             members: LookupMap::new(StorageKey::Members),
             roster: Vector::new(StorageKey::Roster),
+            records: LookupMap::new(StorageKey::Records),
             tree,
             leaves: Vector::new(StorageKey::Leaves),
             recent_roots,
@@ -237,6 +242,14 @@ impl Contract {
             },
         );
         self.roster.push(account.clone());
+        if prior_periods > 0 {
+            self.note(
+                &account,
+                PointSource::Carried {
+                    months: prior_periods,
+                },
+            );
+        }
         emit(
             "member_admitted",
             json!({ "account": account, "prior_periods": prior_periods }),
@@ -286,11 +299,14 @@ impl Contract {
         // cover has to be earned back rather than bought back with one payment.
         if let Some(last) = member.last_paid_period {
             if period - last > 2 {
-                member.paid_periods /= 2;
+                let lost = member.paid_periods - member.paid_periods / 2;
+                member.paid_periods -= lost;
+                self.note(&sender_id, PointSource::Lapsed { lost });
             }
         }
         member.paid_periods += 1;
         member.last_paid_period = Some(period);
+        self.note(&sender_id, PointSource::Dues { period });
         let tier = self.tier_for(member.paid_periods + member.service_points);
 
         let commitment = fr_from_bytes(&commitment).expect("stored commitment is canonical");
@@ -612,6 +628,7 @@ impl Contract {
         let mut member = self.member_of(&voter);
         member.service_points += 1;
         self.members.insert(voter.clone(), member);
+        self.note(&voter, PointSource::Panel { claim: claim.id });
 
         let quorum = self.rules.panel_quorum as usize;
         let yes = claim.votes.iter().filter(|v| v.approve).count();
@@ -869,6 +886,11 @@ impl Contract {
         })
     }
 
+    /// Every change to a member's score, oldest first, with what caused it.
+    pub fn get_record(&self, account: AccountId) -> Vec<RecordEntry> {
+        self.records.get(&account).cloned().unwrap_or_default()
+    }
+
     pub fn get_claim(&self, claim_id: U64) -> Option<Claim> {
         self.claims.get(claim_id.0 as u32).cloned()
     }
@@ -947,6 +969,14 @@ impl Contract {
             self.guardians.contains(&env::predecessor_account_id()),
             "Only a guardian can do this"
         );
+    }
+
+    fn note(&mut self, account: &AccountId, source: PointSource) {
+        let at = U64(env::block_timestamp());
+        self.records
+            .entry(account.clone())
+            .or_default()
+            .push(RecordEntry { at, source });
     }
 
     fn current_period(&self) -> u64 {
@@ -1115,9 +1145,11 @@ impl Contract {
             spare_near() >= bond + FT_STORAGE_DEPOSIT + NEAR_MARGIN,
             "The fund needs more NEAR for bonds; call fund_bonds"
         );
-        let description = format!("Tideover claim #{}. Reason sealed.", claim.id.0);
         let args = json!({
-            "proposal": { "description": description, "kind": self.transfer_kind(claim) }
+            "proposal": {
+                "description": proposal_description(claim.id.0),
+                "kind": self.transfer_kind(claim),
+            }
         });
         Promise::new(self.token.clone())
             .function_call(
@@ -1219,6 +1251,11 @@ impl Contract {
             json!({ "id": claim.id, "amount": claim.amount }),
         );
     }
+}
+
+/// In the fields Trezu reads, so a claim appears there as an ordinary payment request.
+pub fn proposal_description(claim_id: u64) -> String {
+    format!("* Title: Tideover claim #{claim_id} <br>* Notes: Reason sealed")
 }
 
 /// The routing rule, in one place. Being supported is what earns the fast path, and

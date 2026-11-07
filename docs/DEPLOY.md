@@ -60,6 +60,22 @@ That script does four things, as the relay:
 
 Each review then pays for one OutLayer run from the relay's NEAR.
 
+## Open the demo DAO in Trezu
+
+Trezu's hosted app and backend are mainnet-only, but its frontend can open a testnet DAO through a local mock backend. These steps come from its README and have not been run against this DAO yet. In a checkout of [NEAR-DevHub/trezu](https://github.com/NEAR-DevHub/trezu), in `nt-fe`:
+
+```bash
+bun run testnet:mock
+```
+
+Then, in a second terminal:
+
+```bash
+NEXT_PUBLIC_NEAR_NETWORK=testnet NEXT_PUBLIC_NEAR_RPC_URL=https://rpc.testnet.fastnear.com NEXT_PUBLIC_BACKEND_API_BASE=http://127.0.0.1:8889 bun run dev
+```
+
+Open `http://localhost:3000/harbor-mutual.sputnikv2.testnet/requests`. A claim that reached the council should appear as a payment request titled with its claim number. Assets and activity stay empty for testnet DAOs, because there is no indexer.
+
 ## Hosting
 
 The app is a standard Next.js project. Deploy `web/` to any host and set the variables from `web/.env.example`. All keys are testnet keys, and the demo key can only vote.

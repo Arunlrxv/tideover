@@ -63,6 +63,20 @@ Before a fund pins an enclave build, the same steps can run on a plain server, f
 - **A council vote can't hang.** After the council window, the fund finalises an expired proposal and the claim ends.
 - **`advance` is permissionless.** No keeper is trusted, and any account can move a claim along once it is due.
 
+## Records
+
+A member's score is paid months plus panels served, and it sets their tier. `get_record` lists every change to it: months carried over at admission, each period's dues, each panel, and any lapse. A score is exactly the sum of those lines, and a test checks that. Records belong to named accounts and are public, because membership already is. Nothing in one connects a member to a claim of their own, and a panel line links to a claim they judged, which is public anyway.
+
+## Trezu
+
+Trezu is a front end for Sputnik DAOs, so a fund on a Trezu treasury needs no separate integration to work: the money, roles and votes are the same contract. Three things make it fit well.
+
+- **Proposals use Trezu's description format**, `* Title: … <br>* Notes: …`, so a claim shows as an ordinary payment request. `Transfer` proposals are payment requests there already.
+- **Custom proposal templates** give a team forms for install and for running the fund. The Install page generates them for a given DAO.
+- **The fund's role is separate from Trezu's roles**, so Trezu's Requestor, Finance and Governance roles and thresholds stay as they were.
+
+A template can only file a function call, so the role itself is still a `ChangePolicyAddOrUpdateRole` proposal filed from the command line, and voted on in Trezu. All of this comes from reading Trezu's code. It has not been tried in Trezu yet.
+
 ## The yearly tag
 
 The first version burned a nullifier per quarter. Simulating it showed one persistent cheat could take about 30% of a 40-member fund's dues: an anonymous claimant loses nothing, so they could claim the top limit every quarter.

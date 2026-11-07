@@ -76,6 +76,9 @@ export type Claim = {
 
 export type Leaf = { position: number; period: number; tier: number };
 
+export type PointSource = { Carried: { months: number } } | { Dues: { period: number } } | { Panel: { claim: string } } | { Lapsed: { lost: number } };
+export type RecordEntry = { at: string; source: PointSource };
+
 export type MemberView = {
   account: string;
   commitment: string | null;

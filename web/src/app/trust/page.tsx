@@ -74,7 +74,7 @@ export default function TrustPage() {
                   <td>Yes</td>
                 </tr>
                 <tr>
-                  <td>Who is a member</td>
+                  <td>Who is a member, and their record</td>
                   <td>Yes</td>
                   <td>Yes</td>
                   <td>Yes</td>

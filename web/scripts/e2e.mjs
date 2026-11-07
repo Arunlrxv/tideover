@@ -208,6 +208,9 @@ async function scenarioPanelClaim() {
     });
     outcome(await relay.signAndSendTransaction({ receiverId: voter, actions: [actions.signedDelegate(signedDelegate)], throwOnFailure: false }));
   }
+  const record = await view(FUND, "get_record", { account: c.panel[0] });
+  if (record.at(-1)?.source?.Panel?.claim === filed.id) pass("a panelist's new point traces to this claim", c.panel[0]);
+  else fail("a panelist's new point traces to this claim", JSON.stringify(record.at(-1)));
   await waitForStatus(filed.id, "Approved", 15);
   await advance(filed.id);
   const done = await settle(filed.id);

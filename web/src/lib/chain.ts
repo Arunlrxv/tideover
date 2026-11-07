@@ -1,7 +1,7 @@
 // Read access to NEAR. The browser talks to public RPC directly, so what a page
 // shows comes from the chain and not from this app's server.
 import { D, RPCS } from "./config";
-import type { Claim, FundView, MemberView } from "./types";
+import type { Claim, FundView, MemberView, RecordEntry } from "./types";
 
 const b64 = (s: string) => {
   const bytes = new TextEncoder().encode(s);
@@ -45,6 +45,8 @@ export const getFund = () => view<FundView>(D.fund, "get_fund");
 export const getClaim = (id: string) => view<Claim | null>(D.fund, "get_claim", { claim_id: id });
 export const listClaims = (limit = 20, from = 0) => view<Claim[]>(D.fund, "list_claims", { from_index: from, limit });
 export const getMember = (account: string) => view<MemberView | null>(D.fund, "get_member", { account });
+export const listRoster = (limit = 100, from = 0) => view<string[]>(D.fund, "list_roster", { from_index: from, limit });
+export const getRecord = (account: string) => view<RecordEntry[]>(D.fund, "get_record", { account });
 export const panelCases = (account: string) => view<Claim[]>(D.fund, "panel_cases", { account });
 export const groupSize = (period: number, minTier: number) => view<number>(D.fund, "get_group_size", { period, min_tier: minTier });
 export const tokenBalance = (account: string) => view<string>(D.token, "ft_balance_of", { account_id: account });

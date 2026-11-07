@@ -32,26 +32,50 @@ Live app: to be added. No wallet is needed.
 2. Click **Pay $10**. See your cover appear. The relay paid the gas through a NEP-366 meta-transaction, and the money went to the DAO.
 3. Open **Ask for help** and pick **Hospital bill**. Click **Seal and send**. See the proof finish in about three seconds, then the reader's card.
 4. Open **Ledger** and open your claim. See every rule ticked, with no name or reason on the page. Click **Re-check this claim here** to verify the proof and the clerk's signature in your own browser.
-5. Open **Break it** and run each attack. See the contract's own refusal, with the failed transaction.
-6. Back on **Ask for help**, pick **A trick document**, which tells the reader to approve it. It should lose the fast path. If it fools the model, the claim is still capped by the tier and the auto limit, and it can be stopped in the veto window.
-7. Open **Trust** for what this does not hide, and to see whether the clerk is running in an enclave or on the demo's server.
+5. Open **Records** and open a member. See each point of their record with what earned it, and no link to any claim of theirs.
+6. Open **Break it** and run each attack. See the contract's own refusal, with the failed transaction.
+7. Back on **Ask for help**, pick **A trick document**, which tells the reader to approve it. It should lose the fast path. If it fools the model, the claim is still capped by the tier and the auto limit, and it can be stopped in the veto window.
+8. Open **Trust** for what this does not hide, and to see whether the clerk is running in an enclave or on the demo's server.
 
 Without the app: `cd web && npm run e2e` runs the real flow against testnet and checks that the money moved.
 
-## How it fits on Sputnik DAO
+## How it fits Social Money
 
-The track asks what to build on Sputnik rather than beside it. This is the split.
+The track asks for shared budgets, programmable rewards, collective ownership and reputation-based access on Sputnik DAO and Trezu, without rebuilding the multisig.
 
-| Need | Already in Sputnik | Added by Tideover |
-|---|---|---|
-| Custody | The DAO holds everything. The fund contract never keeps funds. | |
-| Paying a claim | `Transfer` proposals | Filing and approving one, through a role that can do nothing else |
-| Large claims | Council votes, unchanged | A proposal with no name or reason on it |
-| Approval by amount | Not possible: the threshold depends on the proposal kind and role, not the amount | The route in `route_for` |
-| Install | `ChangePolicyAddOrUpdateRole` | The factory, which creates a keyless named fund |
-| Uninstall | `ChangePolicyRemoveRole` | Nothing needed |
+| Track idea | In Tideover |
+|---|---|
+| Shared budgets | Dues go to the DAO, and the fund enforces a budget per quarter |
+| Programmable rewards | Each paid month and each panel served adds a point, and points raise a member's cover |
+| Collective ownership | The community's DAO holds all the money and votes on rules, members and the largest claims |
+| Reputation-based access | A member's record sets their tier, and their tier sets how much they can ask for |
+| Named accounts | Funds, members and the DAO are named accounts, and a record belongs to one |
 
-Trezu runs on Sputnik DAOs, so a mainnet fund's proposals should appear there as ordinary requests. This has **not been tested**: Trezu's docs show no testnet version.
+### Approval flows: what exists and what this adds
+
+| Need | Already in Sputnik DAO | Already in Trezu | Added by Tideover |
+|---|---|---|---|
+| Custody | The DAO holds everything | The same DAO | Nothing. The fund contract never keeps funds. |
+| Paying a claim | `Transfer` proposals | Shown as a payment request | Filing and approving one, through a role that can do nothing else |
+| Large claims | Council votes, unchanged | Voted on in Requests, unchanged | A proposal with no name or reason on it |
+| Approval by amount | Not possible: the threshold depends on the proposal kind and role, not the amount | One threshold per kind of request | The route in `route_for` |
+| Reputation | None | None | Tiers, with `get_record` tracing each point |
+| Install | `ChangePolicyAddOrUpdateRole` | Shows and votes on it as a policy change | The factory, which creates a keyless named fund |
+| Running it | `FunctionCall` proposals | Custom proposal templates | Templates on the Install page, for install, admitting members, rules, the clerk and resuming |
+| Uninstall | `ChangePolicyRemoveRole` | Shows and votes on it as a policy change | Nothing needed |
+
+Trezu's hosted app is mainnet-only, but its frontend has a [local mode for testnet DAOs](docs/DEPLOY.md#open-the-demo-dao-in-trezu). The fund's proposals use the description fields Trezu reads, and the templates follow its documented format. Neither has been tried in Trezu itself yet, so treat that column as read from Trezu's code, not tested.
+
+### The track's example prompt
+
+The [example prompt](https://github.com/nearai/near-hackathon-prompt-examples/blob/main/tracks/12-social.md) is a bounty board, and the rules call it a starting point, not a requirement. Tideover answers the same four points for a hardship fund:
+
+| Example requirement | In Tideover |
+|---|---|
+| Use the existing treasury, with no new multisig | Yes. The DAO holds the money and approves every payment. |
+| Reputation on named accounts, every point traceable | Yes. `get_record` lists each point's source, and a score is exactly their sum. Open **Records** to see it. |
+| Small payouts auto-approve, mid-size need one council member, large become a normal proposal | Yes, with one difference: mid-size claims go to three random members instead of one council member, so no single known person sees them all. |
+| A public board of open items, claims, payouts and records | Yes. **Ledger** shows claims and payouts, and **Records** shows each member's record. Claims carry no name, by design. |
 
 Design details: [docs/DESIGN.md](docs/DESIGN.md).
 
@@ -59,6 +83,7 @@ Design details: [docs/DESIGN.md](docs/DESIGN.md).
 
 - **[`tideover-zk`](crates/tideover-zk)**: anonymous membership as a library, for any NEAR contract, with a browser prover. [`contracts/anon-poll`](contracts/anon-poll/src/lib.rs) uses it unchanged to give any DAO a secret ballot in about 150 lines.
 - **A module any Sputnik DAO can install** with two proposals, moving no money and changing no multisig.
+- **[Trezu templates](web/src/lib/trezu.mjs) for running a fund.** Any treasury on Trezu can file Tideover's proposals from a form instead of a command line.
 - **[A sealed clerk](clerk/src/lib.rs) on OutLayer.** A pattern for letting a shared AI model read private documents: encrypt to a small enclave program rather than the model, let it take nothing from its caller but a claim number, and let a DAO pin its build. A shared model decrypts for anyone with an API key, so encrypting straight to it does not protect a document that ends up public.
 - **Membership that needs no NEAR.** Gasless dues let people join who have never held a token.
 - **Stablecoins from any chain.** The Member page shows live NEAR Intents quotes for dues from Solana, Base and Arbitrum. Intents has no testnet, so these do not execute here.
@@ -67,11 +92,11 @@ Design details: [docs/DESIGN.md](docs/DESIGN.md).
 
 | Item | State |
 |---|---|
-| Contract tests, with real proofs and a simulated clerk | 87 pass |
+| Contract tests, with real proofs and a simulated clerk | 91 pass |
 | Sealed clerk tests | 18 pass |
 | Membership library tests | 16 pass |
 | Secret ballot example tests | 5 pass |
-| Browser crypto tests | 13 pass |
+| Browser crypto and template tests | 18 pass |
 | Browser proof accepted by the contract logic | Pass, golden test |
 | Browser-sealed document opened by the clerk | Pass, golden test |
 | Clerk's wasm run under wasmtime | Pass: keys match the browser code, refusals work, and it reaches a real RPC |
@@ -82,7 +107,8 @@ Design details: [docs/DESIGN.md](docs/DESIGN.md).
 | A real NEAR AI review, end to end | **Not yet.** Needs an API key |
 | The clerk running in an OutLayer enclave | **Not yet** |
 | Gas figures | **Not yet measured** on chain |
-| Trezu | **Not tested** |
+| Opening the demo DAO in Trezu | **Not tested** |
+| Trezu templates in Trezu | **Not tested.** Checked by reading its parser, not by running it |
 
 ## Limits
 

@@ -338,6 +338,69 @@ fn status(w: &World, id: U64) -> ClaimStatus {
     w.c.get_claim(id).unwrap().status
 }
 
+// ---------- Records ----------
+
+fn points(entry: &RecordEntry) -> i64 {
+    match entry.source {
+        PointSource::Carried { months } => months as i64,
+        PointSource::Dues { .. } | PointSource::Panel { .. } => 1,
+        PointSource::Lapsed { lost } => -(lost as i64),
+    }
+}
+
+fn assert_record_adds_up(w: &World, account: &AccountId) {
+    let total: i64 = w.c.get_record(account.clone()).iter().map(points).sum();
+    let score = w.c.get_member(account.clone()).unwrap().score;
+    assert_eq!(total, score as i64, "{account}");
+}
+
+#[test]
+fn every_point_on_a_record_traces_to_what_earned_it() {
+    let (mut w, id) = reviewed(250 * USD, "supported", false);
+    let voter = panel_of(&w, id)[0].clone();
+    w.at(voter.clone());
+    w.c.panel_vote(id, true);
+
+    let record = w.c.get_record(voter.clone());
+    assert_eq!(record.len(), 3);
+    assert_eq!(record[0].source, PointSource::Carried { months: 3 });
+    assert_eq!(record[1].source, PointSource::Dues { period: 0 });
+    assert_eq!(record[2].source, PointSource::Panel { claim: id });
+    assert_record_adds_up(&w, &voter);
+}
+
+#[test]
+fn a_lapse_shows_on_the_record_so_it_still_adds_up() {
+    let mut w = World::new();
+    let p = person("amara", 1);
+    w.join(&p, 7);
+    w.pay(&p);
+    w.now += 4 * PERIOD;
+    w.pay(&p);
+
+    let record = w.c.get_record(p.account.clone());
+    assert_eq!(record[2].source, PointSource::Lapsed { lost: 4 });
+    assert_eq!(record[3].source, PointSource::Dues { period: 4 });
+    assert_record_adds_up(&w, &p.account);
+}
+
+#[test]
+fn a_new_member_with_no_history_has_an_empty_record() {
+    let mut w = World::new();
+    let p = person("amara", 1);
+    w.join(&p, 0);
+    assert!(w.c.get_record(p.account.clone()).is_empty());
+    assert!(w.c.get_record(acc("stranger.testnet")).is_empty());
+}
+
+#[test]
+fn a_claim_reads_as_a_payment_in_trezu_with_no_name_or_reason() {
+    assert_eq!(
+        proposal_description(12),
+        "* Title: Tideover claim #12 <br>* Notes: Reason sealed"
+    );
+}
+
 // ---------- Dues and tiers ----------
 
 #[test]

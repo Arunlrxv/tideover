@@ -3,13 +3,14 @@
 import { useMemo, useState } from "react";
 import { getPolicy, view, type Policy } from "@/lib/chain";
 import { D, accountUrl } from "@/lib/config";
-import { cliCommand, createFundProposal, fundAccount, roleProposal } from "@/lib/install";
+import { cliCommand, createFundProposal, defaultRules, fundAccount, roleProposal } from "@/lib/install";
+import { createFundTemplate, fundTemplates } from "@/lib/trezu.mjs";
 import type { FundView } from "@/lib/types";
 
 type Check = { dao: string; policy: Policy; hasFundRole: boolean; deposit: string };
 type NewFund = "missing" | "ours" | "theirs";
 
-function CopyBlock({ text }: { text: string }) {
+function CopyBlock({ text, label = "Copy command" }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div>
@@ -24,7 +25,7 @@ function CopyBlock({ text }: { text: string }) {
           setTimeout(() => setCopied(false), 1500);
         }}
       >
-        {copied ? "Copied" : "Copy command"}
+        {copied ? "Copied" : label}
       </button>
     </div>
   );
@@ -67,6 +68,13 @@ export default function InstallPage() {
       role: cliCommand(check.dao, roleProposal(name), bond, signer),
     };
   }, [check, name, guardian, dues, signer]);
+
+  const templates = useMemo(() => {
+    if (!check) return null;
+    const rules = defaultRules(dues, check.policy.proposal_bond, check.policy.proposal_period);
+    const create = createFundTemplate({ factory: D.factory, dao: check.dao, token: D.token, deposit: check.deposit, rules, dues: rules.dues });
+    return { create, everyday: fundTemplates(fundAccount(name || "my-community")) };
+  }, [check, dues, name]);
 
   const depositNear = check ? (Number(BigInt(check.deposit) / 10n ** 21n) / 1000).toFixed(2) : "about 6.6";
 
@@ -163,6 +171,32 @@ export default function InstallPage() {
         </div>
 
         <div className="card">
+          <h3>Using Trezu?</h3>
+          <p className="muted">
+            Trezu opens any Sputnik DAO, so a claim that reaches the council shows there as an ordinary payment request, and members
+            vote on it as usual. In Trezu, open Custom templates, choose Code, and paste a template. Your team then gets a form that
+            files the proposal. Templates can only file function calls, so proposal two still comes from the command above, and you
+            vote on it in Trezu.
+          </p>
+          {!templates && <p className="muted small">Read your DAO&apos;s policy above to generate these.</p>}
+          {templates && (
+            <>
+              <h4>Instead of proposal one</h4>
+              <CopyBlock text={JSON.stringify(templates.create, null, 2)} label="Copy template" />
+              <details style={{ marginTop: 14 }}>
+                <summary>Forms for running the fund afterwards</summary>
+                {templates.everyday.map((t) => (
+                  <div key={t.id} style={{ marginTop: 12 }}>
+                    <h4>{t.title}</h4>
+                    <CopyBlock text={JSON.stringify(t, null, 2)} label="Copy template" />
+                  </div>
+                ))}
+              </details>
+            </>
+          )}
+        </div>
+
+        <div className="card">
           <h3>To remove it</h3>
           <p className="muted">
             One <code>ChangePolicyRemoveRole</code> proposal. The fund can no longer pay anything, and the treasury was never anywhere
@@ -170,10 +204,6 @@ export default function InstallPage() {
           </p>
         </div>
 
-        <div className="notice">
-          On mainnet this is a normal Sputnik DAO, so it should also open in Trezu, with these proposals as ordinary requests. Trezu&apos;s
-          docs show no testnet version, so that part has not been tested.
-        </div>
       </div>
     </div>
   );
