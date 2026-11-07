@@ -695,6 +695,14 @@ impl Contract {
         #[callback_result] result: Result<u64, PromiseError>,
     ) -> Option<Promise> {
         let mut claim = self.claim_of(claim_id);
+        // A callback can be delayed, and it still runs. If the in-flight timeout let
+        // someone file again, two answers arrive here. The first one still waiting
+        // carries the claim, and the other proposal never gets the fund's vote.
+        let waiting = matches!(claim.status, ClaimStatus::Paying | ClaimStatus::Filing);
+        if !waiting || claim.proposal_id.is_some() {
+            env::log_str("A late answer about a proposal; leaving it unapproved");
+            return None;
+        }
         let proposal_id = match result {
             Ok(id) => id,
             Err(_) => {
@@ -747,13 +755,15 @@ impl Contract {
         let mut follow_up = None;
         match proposal_status(&result).as_str() {
             "Approved" => {
-                if claim.status == ClaimStatus::Settling {
-                    self.mark_paid(&mut claim);
-                } else {
+                if claim.status != ClaimStatus::Settling {
                     // Sputnik says Approved before the transfer has run. Look again.
                     claim.status = ClaimStatus::Settling;
                     claim.deadline = U64(now + SETTLE_SECS * NS_PER_SEC);
+                } else if now >= claim.deadline.0 {
+                    self.mark_paid(&mut claim);
                 }
+                // A second read inside the window proves nothing, because the transfer
+                // may not have run yet. Only `CouncilVote` lets two reads overlap.
             }
             "Failed" => {
                 // Nothing moved, for example because the DAO was short of the token.

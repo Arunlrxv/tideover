@@ -12,9 +12,10 @@
 //! and it can only reach NEAR AI and a NEAR RPC (see manifest.json).
 //!
 //! The caller chooses nothing but which claim to read. Everything else, the amount,
-//! the date and the nonce, comes from the fund contract, because a caller who could
-//! write the case file could ask the model questions about someone's document, one
-//! answer at a time. Asking twice gets the same card.
+//! the date and the nonce, comes from a fund the factory made, because a caller who
+//! could write the case file could ask the model questions about someone's document,
+//! one answer at a time. An envelope fits one claim and only while that claim waits
+//! for review, and the model runs at temperature 0, so a retry has little to find.
 //!
 //! It keeps nothing. Each run reads one document, signs one card and ends.
 
@@ -30,6 +31,9 @@ use sha2::{Digest, Sha256};
 pub const MODEL_URL: &str = "https://cloud-api.near.ai/v1/chat/completions";
 /// Testnet. A mainnet fund pins a build with its own RPC here and in manifest.json.
 pub const RPC_URL: &str = "https://rpc.testnet.fastnear.com";
+/// The factory whose funds this build serves. It deploys one fixed contract, so a
+/// fund's case file is always the contract's own, and no caller can write one.
+pub const FACTORY: &str = "funds.tideover-hq.testnet";
 pub const CASE_SEPARATOR: &str = "\n\nCASE FILE: ";
 
 const SEAL_INFO: &[u8] = b"tideover/clerk/seal/v1";
@@ -112,12 +116,14 @@ impl Keys {
     }
 }
 
-/// What a member seals. Binding the amount and payout inside the envelope stops
-/// anyone copying a good document's ciphertext onto a claim of their own: the
-/// clerk's signature covers these values, and the contract checks them.
+/// What a member seals. Everything here must match the claim, so an envelope copied
+/// from a public transaction fits no other claim: another member has another tag, and
+/// the same member a cycle later has another cycle.
 #[derive(Deserialize)]
 struct Sealed {
     fund: String,
+    cycle: u64,
+    nullifier: String,
     amount: String,
     payout: String,
     document: String,
@@ -138,6 +144,8 @@ struct Review {
 struct Record {
     status: String,
     nonce: String,
+    cycle: u64,
+    nullifier: String,
     evidence_sha256: String,
     amount: String,
     payout: String,
@@ -272,7 +280,17 @@ fn content_of(response: &str) -> Result<String, String> {
         .ok_or_else(|| "the model returned no answer".to_string())
 }
 
+/// True for `label.<FACTORY>`, the only shape of account the factory creates.
+fn from_factory(fund: &str) -> bool {
+    fund.strip_suffix(FACTORY)
+        .and_then(|rest| rest.strip_suffix('.'))
+        .is_some_and(|label| !label.is_empty() && !label.contains('.'))
+}
+
 fn review(input: Review, keys: &Keys, net: &dyn Net) -> Result<Value, String> {
+    if !from_factory(&input.fund) {
+        return Err("this clerk does not serve that fund".to_string());
+    }
     let args = json!({ "claim_id": input.claim });
     let record = net.view(&input.fund, "get_claim", &args)?;
     if record.is_null() {
@@ -290,7 +308,11 @@ fn review(input: Review, keys: &Keys, net: &dyn Net) -> Result<Value, String> {
     }
     let plain = keys.open(&input.envelope)?;
     let sealed: Sealed = serde_json::from_str(&plain).map_err(|_| "unreadable sealed payload")?;
-    if sealed.fund != input.fund || sealed.amount != record.amount || sealed.payout != record.payout
+    if sealed.fund != input.fund
+        || sealed.cycle != record.cycle
+        || sealed.nullifier != record.nullifier
+        || sealed.amount != record.amount
+        || sealed.payout != record.payout
     {
         return Err("this document was sealed for a different claim".to_string());
     }
@@ -369,6 +391,8 @@ mod tests {
                 claim: json!({
                     "status": "AwaitingReview",
                     "nonce": "abcd",
+                    "cycle": g["cycle"],
+                    "nullifier": g["nullifier"],
                     "evidence_sha256": g["evidence_sha256"],
                     "amount": g["amount"],
                     "payout": g["payout"],
@@ -481,12 +505,37 @@ mod tests {
     }
 
     #[test]
-    fn a_stolen_envelope_cannot_serve_a_different_claim() {
+    fn a_fund_the_factory_did_not_make_is_refused() {
+        // Such a contract could write its own case file.
         let g = golden();
-        // Someone files a claim paying themselves, committing to this envelope.
+        for fund in [
+            "fake.testnet",
+            "funds.tideover-hq.testnet",
+            "a.b.funds.tideover-hq.testnet",
+            "xfunds.tideover-hq.testnet",
+        ] {
+            let net = Stub::new(&g, GOOD);
+            let r = json!({ "action": "review", "fund": fund, "claim": "4", "envelope": g["envelope"] })
+                .to_string();
+            assert_eq!(
+                handle(&r, &SEED, &net)["error"],
+                "this clerk does not serve that fund",
+                "{fund}"
+            );
+            assert!(net.seen.borrow().is_empty(), "the model must not be called");
+        }
+    }
+
+    #[test]
+    fn a_copied_envelope_fits_no_other_claim() {
+        let g = golden();
+        // Someone files a claim that commits to this envelope. Another payout or amount
+        // would pay them. Another tag or cycle would date the document, or pay twice.
         for (field, value) in [
             ("payout", json!("thief.testnet")),
             ("amount", json!("999000000")),
+            ("nullifier", json!("cd".repeat(32))),
+            ("cycle", json!(1)),
         ] {
             let net = with_claim(&g, field, value);
             let out = handle(&request(&g), &SEED, &net);

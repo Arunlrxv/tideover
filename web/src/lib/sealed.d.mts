@@ -9,7 +9,7 @@ export const PROMPT: string;
 export function sha256hex(x: string | Uint8Array): string;
 export function sealTo(clerkKeyHex: string, plaintext: string, ephSecret?: Uint8Array, nonce?: Uint8Array): string;
 export function openEnvelope(x25519Secret: Uint8Array, envelopeHex: string): string;
-export function sealedPayload(p: { fund: string; amount: string; payout: string; document: string }): string;
+export function sealedPayload(p: { fund: string; cycle: number; nullifier: string; amount: string; payout: string; document: string }): string;
 export function cardMessage(p: {
   fund: string;
   claim: string;

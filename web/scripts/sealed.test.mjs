@@ -60,9 +60,10 @@ test("only the closed fields survive", () => {
 // ---- A whole review, with the fund and the model stood in for. ----
 
 function setup(sealed = {}) {
-  const payload = { fund: "harbor.testnet", amount: "85000000", payout: "c0ffee.testnet", document: "Patient: Rosa. Due $85.", ...sealed };
+  const nullifier = "ab".repeat(32);
+  const payload = { fund: "harbor.testnet", cycle: 2, nullifier, amount: "85000000", payout: "c0ffee.testnet", document: "Patient: Rosa. Due $85.", ...sealed };
   const envelope = sealTo(keys.encryption_key, sealedPayload(payload));
-  const record = { status: "AwaitingReview", nonce: "abcd", evidence_sha256: sha256hex(envelope), amount: "85000000", payout: "c0ffee.testnet" };
+  const record = { status: "AwaitingReview", nonce: "abcd", cycle: 2, nullifier, evidence_sha256: sha256hex(envelope), amount: "85000000", payout: "c0ffee.testnet" };
   const calls = [];
   const net = {
     keys,
@@ -84,11 +85,18 @@ test("a review signs a card the clerk's public key verifies, and carries nothing
   assert.ok(ed25519.verify(hexToBytes(out.signature), utf8ToBytes(message), hexToBytes(keys.signer)));
 });
 
-test("a stolen envelope does not serve a claim that pays someone else", async () => {
-  const { input, net, record, calls } = setup();
-  record.payout = "thief.testnet";
-  await assert.rejects(review(input, net), /sealed for a different claim/);
-  assert.equal(calls.length, 0);
+test("a copied envelope fits no other claim", async () => {
+  for (const [field, value] of [
+    ["payout", "thief.testnet"],
+    ["amount", "999000000"],
+    ["nullifier", "cd".repeat(32)],
+    ["cycle", 3],
+  ]) {
+    const { input, net, record, calls } = setup();
+    record[field] = value;
+    await assert.rejects(review(input, net), /sealed for a different claim/);
+    assert.equal(calls.length, 0);
+  }
 });
 
 test("a claim past its review can't be read again", async () => {

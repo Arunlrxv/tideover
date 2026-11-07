@@ -50,12 +50,17 @@ writeFileSync(
 
 // ---- An envelope, sealed the way a browser does, to the clerk tests' test seed. ----
 const clerk = clerkKeys("07".repeat(32));
+const CLERK_FUND = "harbor.funds.tideover-hq.testnet";
+const sealedCycle = 0;
+const sealedNullifier = "ab".repeat(32);
 const sealedAmount = String(85n * USD);
 const sealedPayout = "c0ffee.testnet";
 const envelope = sealTo(
   clerk.encryption_key,
   sealedPayload({
-    fund: FUND,
+    fund: CLERK_FUND,
+    cycle: sealedCycle,
+    nullifier: sealedNullifier,
     amount: sealedAmount,
     payout: sealedPayout,
     document: "St Brigid's Community Hospital. Patient: Rosa Almeida. Amount due $85.00.",
@@ -66,7 +71,9 @@ writeFileSync(
   JSON.stringify(
     {
       clerk: { signer: clerk.signer, encryption_key: clerk.encryption_key, prompt_sha256: sha256hex(PROMPT) },
-      fund: FUND,
+      fund: CLERK_FUND,
+      cycle: sealedCycle,
+      nullifier: sealedNullifier,
       amount: sealedAmount,
       payout: sealedPayout,
       evidence_sha256: sha256hex(envelope),

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { SealMark } from "@/components/Seal";
 import { getFund, getMember } from "@/lib/chain";
 import { txUrl } from "@/lib/config";
-import { ROUTE_LABEL, cardLines, fromUnits, toUnits, usd } from "@/lib/format";
+import { ROUTE_LABEL, SERVER_CLERK, cardLines, fromUnits, toUnits, usd } from "@/lib/format";
 import {
   fileClaim,
   freshPayout,
@@ -142,6 +142,13 @@ export default function ClaimPage() {
         {me && member && fund && !paidUp && (
           <div className="notice">
             Pay your dues first. <Link href="/member">Go to your membership</Link>
+          </div>
+        )}
+
+        {fund?.reviewer?.code_hash === SERVER_CLERK && (
+          <div className="notice warn">
+            This demo&apos;s clerk runs on our server, not in an enclave yet, so that server could read what you seal. Use a sample or an
+            invented document. <Link href="/trust">Why</Link>
           </div>
         )}
 

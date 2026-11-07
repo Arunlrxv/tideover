@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { KeyPair, Account } from "near-api-js";
 import { MODEL_URL, clerkKeys, review, signCard } from "../src/lib/clerk.mjs";
 import { cardMessage, sealTo, sealedPayload, sha256hex } from "../src/lib/sealed.mjs";
-import init, { prove_claim } from "../public/zk/tideover_wasm.js";
+import init, { nullifier, prove_claim } from "../public/zk/tideover_wasm.js";
 import { DEPLOYMENT, ROOT, SECRETS, USD, actions, call, log, outcome, provider, readJson, teraToGas, view, writeJson } from "./lib.mjs";
 
 const D = readJson(DEPLOYMENT);
@@ -66,7 +66,8 @@ async function prepare(memberId, dollars, document, { minTier } = {}) {
   const m = await view(FUND, "get_member", { account: memberId });
   const amount = String(BigInt(dollars) * USD);
   const payout = freshImplicit();
-  const envelope = sealTo(fund.reviewer.encryption_key, sealedPayload({ fund: FUND, amount, payout, document }));
+  const tag = nullifier(S.secrets[memberId], FUND, BigInt(fund.window));
+  const envelope = sealTo(fund.reviewer.encryption_key, sealedPayload({ fund: FUND, cycle: fund.cycle, nullifier: tag, amount, payout, document }));
   const evidence_sha256 = sha256hex(envelope);
   const { millis: _millis, ...proof } = JSON.parse(
     prove_claim(
@@ -97,6 +98,8 @@ async function fileClaim(args) {
 }
 
 const claim = (id) => view(FUND, "get_claim", { claim_id: id });
+/** Some steps read the DAO from a callback, and that needs more gas than the rest. */
+const advance = (id) => call(relay, FUND, "advance", { claim_id: id }, { tgas: 300 });
 const balance = (id) => view(D.token, "ft_balance_of", { account_id: id }).then(BigInt);
 
 async function waitForStatus(id, status, seconds) {
@@ -142,7 +145,7 @@ async function postCard(id, envelope) {
 async function settle(id) {
   await waitForStatus(id, "Settling", 30);
   await sleep(SETTLE_SECS + 2);
-  await call(relay, FUND, "advance", { claim_id: id }, { tgas: 100 });
+  await advance(id);
   return waitForStatus(id, "Paid", 30);
 }
 
@@ -164,11 +167,11 @@ async function scenarioAutoClaim() {
   const c = await claim(filed.id);
   if (c.status !== "VetoWindow") return fail("a well-supported small claim goes to the veto window", c.status);
   pass("a well-supported $85 claim goes to the veto window");
-  await refused("the veto window holds until it ends", "still open", () => call(relay, FUND, "advance", { claim_id: filed.id }, { tgas: 300 }));
+  await refused("the veto window holds until it ends", "still open", () => advance(filed.id));
   const { rules } = await view(FUND, "get_fund");
   await sleep(Math.max(0, rules.veto_window_secs - 10));
   for (let i = 0; i < 12; i++) {
-    const r = await call(relay, FUND, "advance", { claim_id: filed.id }, { tgas: 300 }).catch((e) => e);
+    const r = await advance(filed.id).catch((e) => e);
     if (!(r instanceof Error)) break;
     await sleep(5);
   }
@@ -192,7 +195,7 @@ async function scenarioPanelClaim() {
   } else {
     log("  waiting for the review window, so the claim falls back to people");
     await sleep(fund.rules.review_window_secs + 5);
-    await call(relay, FUND, "advance", { claim_id: filed.id });
+    await advance(filed.id);
   }
   const c = await waitForStatus(filed.id, "PanelVoting", 30);
   pass("a $250 claim goes to a panel of three random members", c.panel.join(", "));
@@ -206,7 +209,7 @@ async function scenarioPanelClaim() {
     outcome(await relay.signAndSendTransaction({ receiverId: voter, actions: [actions.signedDelegate(signedDelegate)], throwOnFailure: false }));
   }
   await waitForStatus(filed.id, "Approved", 15);
-  await call(relay, FUND, "advance", { claim_id: filed.id }, { tgas: 300 });
+  await advance(filed.id);
   const done = await settle(filed.id);
   await expectPaid("the DAO paid a fresh address through its own proposal", done, args, 250, before);
 }
@@ -217,10 +220,10 @@ async function scenarioCouncilClaim() {
   const before = await balance(D.dao);
   const filed = await fileClaim(args);
   await sleep(fund.rules.review_window_secs + 5);
-  await call(relay, FUND, "advance", { claim_id: filed.id });
+  await advance(filed.id);
   let c = await claim(filed.id);
   if (c.status !== "NeedsCouncil") return fail("a large claim goes to the council", c.status);
-  await call(relay, FUND, "advance", { claim_id: filed.id }, { tgas: 300 });
+  await advance(filed.id);
   c = await waitForStatus(filed.id, "CouncilVote", 30);
   const p = await view(D.dao, "get_proposal", { id: c.proposal_id });
   pass("a $600 claim becomes a normal DAO proposal", `#${p.id}: "${p.description}"`);
@@ -230,7 +233,7 @@ async function scenarioCouncilClaim() {
   for (const voter of D.council.slice(0, 2)) {
     await call(new Account(voter, provider, S.demoKey), D.dao, "act_proposal", { id: p.id, action: "VoteApprove", proposal: p.kind }, { tgas: 300 });
   }
-  await call(relay, FUND, "advance", { claim_id: filed.id }, { tgas: 100 });
+  await advance(filed.id);
   const done = await settle(filed.id);
   await expectPaid("the council's vote paid the claim", done, args, 600, before);
 }

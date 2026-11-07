@@ -46,10 +46,11 @@ export function openEnvelope(x25519Secret, envelopeHex) {
 }
 
 /**
- * What a member seals. The amount and payout are inside the envelope, so nobody can
- * copy a good document's ciphertext onto a claim of their own.
+ * What a member seals. All of it must match the claim, so an envelope copied from a
+ * public transaction fits no other claim, whoever files it and whenever.
  */
-export const sealedPayload = ({ fund, amount, payout, document }) => JSON.stringify({ fund, amount, payout, document });
+export const sealedPayload = ({ fund, cycle, nullifier, amount, payout, document }) =>
+  JSON.stringify({ fund, cycle, nullifier, amount, payout, document });
 
 /** The exact text the clerk signs and the contract rebuilds. */
 export function cardMessage({ fund, claim, nonce, evidenceSha256, amount, payout, card }) {

@@ -4,6 +4,7 @@
 import { actions, teraToGas } from "near-api-js";
 import { MODEL_URL, clerkKeys, review } from "../clerk.mjs";
 import { view } from "../chain";
+import { sendAndPoll } from "../wait.mjs";
 import { provider, readOutcome, relayAccount, need } from "./near";
 import type { Card } from "../types";
 
@@ -20,16 +21,6 @@ export function clerkMode(): ClerkMode | null {
   return null;
 }
 
-/** Waits for the run to finish. An RPC gives up long before a model does, so this polls. */
-async function outcomeOf(txHash: string, accountId: string) {
-  for (let i = 0; i < 55; i++) {
-    await new Promise((done) => setTimeout(done, 2000));
-    const r = await provider.viewTransactionStatus({ txHash, accountId, waitUntil: "FINAL" }).catch(() => null);
-    if (r) return r;
-  }
-  throw new Error("The clerk did not finish in time");
-}
-
 async function inEnclave(input: Input): Promise<Output> {
   const relay = relayAccount();
   const input_data = JSON.stringify({ action: "review", ...input });
@@ -38,34 +29,28 @@ async function inEnclave(input: Input): Promise<Output> {
     method: "estimate_execution_cost",
     args: { resource_limits: LIMITS, input_len: input_data.length },
   });
-  const sent = await relay.signAndSendTransaction({
-    receiverId: OUTLAYER,
-    actions: [
-      actions.functionCall(
-        "request_execution",
-        {
-          source: {
-            WasmUrl: {
-              url: need("TIDEOVER_CLERK_WASM_URL"),
-              hash: need("TIDEOVER_CLERK_WASM_HASH"),
-              build_target: "wasm32-wasip2",
-            },
+  const finished = await sendAndPoll(relay, provider, OUTLAYER, [
+    actions.functionCall(
+      "request_execution",
+      {
+        source: {
+          WasmUrl: {
+            url: need("TIDEOVER_CLERK_WASM_URL"),
+            hash: need("TIDEOVER_CLERK_WASM_HASH"),
+            build_target: "wasm32-wasip2",
           },
-          resource_limits: LIMITS,
-          input_data,
-          secrets_ref: { profile: "clerk", account_id: relay.accountId },
-          response_format: "Json",
-          payer_account_id: relay.accountId,
         },
-        teraToGas(300),
-        BigInt(String(deposit)),
-      ),
-    ],
-    waitUntil: "INCLUDED",
-    throwOnFailure: false,
-  });
-  const txHash = (sent as unknown as { transaction: { hash: string } }).transaction.hash;
-  const { value } = readOutcome((await outcomeOf(txHash, relay.accountId)) as never);
+        resource_limits: LIMITS,
+        input_data,
+        secrets_ref: { profile: "clerk", account_id: relay.accountId },
+        response_format: "Json",
+        payer_account_id: relay.accountId,
+      },
+      teraToGas(300),
+      BigInt(String(deposit)),
+    ),
+  ]);
+  const { value } = readOutcome(finished);
   const out = value as Output & { error?: string };
   if (out?.error) throw new Error(`The clerk refused: ${out.error}`);
   if (!out?.card || !out.signature) throw new Error("The clerk gave no card");

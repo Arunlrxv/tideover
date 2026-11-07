@@ -21,16 +21,16 @@ Tideover splits the record in two. **Whether the rules were followed** is public
 ## A claim, step by step
 
 1. **Dues.** `ft_transfer_call` reaches `ft_on_transfer`, which forwards the money to the DAO and appends `leaf = H(commitment, period, tier)` to a Poseidon Merkle tree of depth 16.
-2. **Seal.** The browser encrypts `{fund, amount, payout, document}` to the clerk's X25519 key, which the DAO pinned, and hashes the ciphertext.
+2. **Seal.** The browser encrypts `{fund, cycle, nullifier, amount, payout, document}` to the clerk's X25519 key, which the DAO pinned, and hashes the ciphertext.
 3. **Prove.** The browser proves it knows the secret behind a leaf for this or last period, at `tier >= min_tier`. Public inputs are `root, period, min_tier, scope, nullifier, signal`.
    - `signal` hashes the fund, cycle, amount, payout and evidence hash, so a relay cannot change them, and a proof cannot be replayed into a later cycle.
    - `nullifier = H(secret, scope)` with `scope = H(fund, window)`. It is the member's anonymous tag for the year.
    - The browser proves the lowest tier that covers the amount, and last month's finished group unless this month's is already bigger. Both hide the member among more people.
 4. **File.** Any account can submit `file_claim`, because the proof authorises it. The contract refuses a group smaller than `min_group`, verifies the proof through the NEP-488 host functions, and only then reads the tag's history and the cycle budget.
-5. **Read.** The relay hands the clerk a claim number and the envelope, and nothing else. The clerk reads the claim from the fund contract, checks it is waiting for review and that the envelope matches its evidence hash, opens the envelope, checks the sealed amount and payout match the claim, and sends the contract's case file and the document to the model.
+5. **Read.** The relay hands the clerk a claim number and the envelope, and nothing else. The clerk reads the claim from the fund contract, checks it is waiting for review and that the envelope matches its evidence hash, opens the envelope, checks everything sealed with the document matches the claim, and sends the contract's case file and the document to the model.
 6. **Post.** Anyone can call `post_card`, because the clerk's signature covers the fund, claim, nonce, evidence hash, amount, payout and every field of the card. The contract rebuilds that text itself.
 7. **Route.** `route_for` picks a path from the amount, the card and the tag's history.
-8. **Pay.** The contract registers the payout address on the token, files a `Transfer` proposal, approves it through its role, and reads the proposal back. Sputnik says `Approved` before its transfer runs, in a separate receipt that can still fail, so the claim waits in `Settling` and the fund reads the proposal again before it marks anything `Paid`. If the transfer failed, `Finalize` retries the same proposal. One proposal carries a claim from start to finish, so a retry can never pay twice.
+8. **Pay.** The contract registers the payout address on the token, files a `Transfer` proposal, approves it through its role, and reads the proposal back. Sputnik says `Approved` before its transfer runs, in a separate receipt that can still fail, so the claim waits in `Settling` for 20 seconds and the fund reads the proposal again before it marks anything `Paid`. If the transfer failed, `Finalize` retries the same proposal. One proposal carries a claim from start to finish, and a late answer about a second one gets no vote, so a retry can never pay twice. `Paid` rests on that wait: under severe congestion, a transfer's result could land after it.
 
 ## The clerk
 
@@ -40,12 +40,12 @@ So documents are encrypted to a clerk, 400 lines of Rust running in an OutLayer 
 
 - **Nobody knows its key.** `PROTECTED_CLERK_SEED` is generated inside the enclave and stored against the build's sha256. Only that exact code can read it, and the people who deployed it cannot.
 - **Its prompt is compiled in.** The prompt's hash is part of the build, so changing it changes the build's hash, and that takes a DAO vote.
-- **The caller chooses nothing but which claim to read.** Everything else comes from the fund contract. A caller who could write the case file could ask the model questions about someone's document, one closed answer at a time, and read the answers back.
-- **One claim, one review.** The clerk refuses a claim that is not `AwaitingReview`, so a sealed document cannot be probed at a time of someone's choosing, and asking twice gets the same card.
+- **The caller chooses nothing but which claim to read.** Everything else comes from the fund contract, and only from a fund the factory made, whose code is fixed. A caller who could write the case file could ask the model questions about someone's document, one closed answer at a time, and read the answers back.
+- **An envelope fits one claim.** The member's tag and the cycle are sealed with the document, and a member can file once per cycle, so an envelope copied from a public transaction fits no other claim. The clerk also refuses a claim that is not `AwaitingReview`, so a document cannot be probed later. The model runs at temperature 0, so a retry has little to find.
 - **It can reach two hosts.** The manifest allows NEAR AI and one NEAR RPC, it sits in the build, and OutLayer's worker enforces it.
 - **It keeps nothing.** Each run reads one document, signs one card and ends.
 
-The DAO pins the clerk's public keys and build hash with `set_reviewer`. OutLayer's public attestation for the run that printed those keys is the record of which build made them, and the Trust page compares the two.
+The DAO pins the clerk's public keys and build hash with `set_reviewer`. OutLayer's public attestation for the run that printed those keys is the record of which build made them. The Trust page compares the pinned hash with that attestation and the pinned keys with what the run printed, and `outlayer-verify` checks the Intel quote behind it. The build is not reproducible yet, so a DAO that wants to know what is in a hash has to build it on the same setup or trust whoever did.
 
 Before a fund pins an enclave build, the same steps can run on a plain server, from `web/src/lib/clerk.mjs`. That server could read a document, so the fund records `server-demo` where the build hash would go, and the Trust page says so in red. Both clerks use the same keys, envelope and signed text, so one DAO vote moves a fund from one to the other.
 
@@ -89,14 +89,14 @@ An independent review of the first version found no way to forge a proof or a si
 
 | If this fails | Then |
 |---|---|
-| The relay is malicious | It can drop a claim or hold back a card, and the claim then goes to people. It cannot read, change or fake them. |
+| The relay is malicious | It can drop a claim, hold back a card, or run the clerk twice and post the answer it prefers. Without a card, the claim goes to people. It cannot read, change or fake anything. |
 | The model is fooled | The path changes, within the tier, yearly and auto limits. |
 | The clerk's enclave is broken | Documents can be read, including old ciphertext in public transactions. Money rules still hold. |
 | NEAR AI's enclave or gateway is broken | Documents passing through can be read. The clerk reaches it over TLS and does not yet check its attestation itself. |
 | The RPC the clerk reads lies | It could show the clerk a false case file. A card still fits only the real claim, but a false case file could put a question to the model. A light client would remove this. |
 | Someone holds the setup's toxic waste | They can forge membership proofs. This is why real funds need a ceremony. |
 | A guardian is malicious | They can pause the fund or send claims to the council, and nothing more. |
-| The DAO is malicious | It holds the treasury anyway. It cannot see who claimed. |
+| The DAO is malicious | It holds the treasury anyway. It cannot see who claimed, but a vote could pin a clerk key of its own and read new documents, which might name someone. The Trust page shows that at once, and the vote is public. |
 
 ## Economics
 

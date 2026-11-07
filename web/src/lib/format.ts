@@ -107,3 +107,6 @@ export function cardLines(card: Card) {
 }
 
 export const isOpen = (c: Claim) => c.status !== "Paid" && c.status !== "Rejected";
+
+/** A fund on a server clerk records this in place of a build hash, so it can't pass for an enclave. */
+export const SERVER_CLERK = "server-demo";

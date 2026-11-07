@@ -127,6 +127,6 @@ export type Deployment = {
   council: string[];
   guardians: string[];
   seededMembers: string[];
-  clerk?: { keysTx?: string; wasmUrl?: string };
+  clerk?: { keysTx?: string; keysSender?: string; wasmUrl?: string };
   transactions: Record<string, string>;
 };

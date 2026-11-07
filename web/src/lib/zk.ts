@@ -31,6 +31,7 @@ function ask<T>(op: string, payload: unknown = {}): Promise<T> {
 
 export const newSecret = () => ask<string>("newSecret");
 export const commitmentOf = (secret: string) => ask<string>("commitment", { secret });
+export const nullifierOf = (secret: string, fund: string, window: number) => ask<string>("nullifier", { secret, fund, window });
 
 export type ClaimRequest = {
   secret: string;

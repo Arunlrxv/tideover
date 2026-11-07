@@ -86,9 +86,8 @@ export async function review({ fund, claim, envelope }, { keys, view, askModel }
   if (record.status !== "AwaitingReview") throw new Error("this claim is not waiting for a review");
   if (sha256hex(envelope) !== record.evidence_sha256) throw new Error("the envelope does not match the claim's evidence");
   const sealed = JSON.parse(openEnvelope(keys.x25519Secret, envelope));
-  if (sealed.fund !== fund || sealed.amount !== record.amount || sealed.payout !== record.payout) {
-    throw new Error("this document was sealed for a different claim");
-  }
+  const fits = sealed.fund === fund && sealed.cycle === record.cycle && sealed.nullifier === record.nullifier && sealed.amount === record.amount && sealed.payout === record.payout;
+  if (!fits) throw new Error("this document was sealed for a different claim");
   const caseFile = await view("get_case_file", { claim_id: claim });
   const response = JSON.parse(await askModel(modelRequest(caseFile, sealed.document)));
   const content = response.choices?.[0]?.message?.content;

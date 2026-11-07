@@ -1,16 +1,20 @@
 // Deploys the Harbor demo community on NEAR testnet, one idempotent step at a time.
 //
 //   node scripts/deploy.mjs                    run every step that has not run yet
-//   node scripts/deploy.mjs enclave <url> <sha256>
-//       run an uploaded clerk build, read its keys, and pin it through a DAO vote
+//   node scripts/deploy.mjs enclave    put the built clerk on OutLayer and pin it
 //
 // A real install is steps "fund" and "role": two ordinary proposals on an existing
 // DAO. Everything else here only builds a demo community to install it on.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Account, KeyPair } from "near-api-js";
-import { bytesToHex, randomBytes } from "@noble/hashes/utils.js";
+import { chacha20poly1305 } from "@noble/ciphers/chacha.js";
+import { x25519 } from "@noble/curves/ed25519.js";
+import { hkdf } from "@noble/hashes/hkdf.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, hexToBytes, randomBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { clerkKeys } from "../src/lib/clerk.mjs";
+import { sendAndPoll } from "../src/lib/wait.mjs";
 import { PROMPT, sha256hex } from "../src/lib/sealed.mjs";
 import init, { commitment, new_secret } from "../public/zk/tideover_wasm.js";
 import {
@@ -37,6 +41,9 @@ const DAO_FACTORY = "sputnikv2.testnet";
 const DAO_NAME = process.env.TIDEOVER_DAO_NAME ?? "harbor-mutual";
 const FUND_LABEL = "harbor";
 const OUTLAYER = "outlayer.testnet";
+const OUTLAYER_API = "https://testnet-api.outlayer.ai";
+const CLERK_WASM = join(ROOT, "target", "wasm32-wasip2", "release", "tideover-clerk.wasm");
+const CLERK_PROFILE = "clerk";
 /** Recorded on chain instead of a build hash, so a server clerk can't pass for an enclave. */
 const SERVER_CLERK = "server-demo";
 
@@ -179,27 +186,112 @@ async function enclaveKeys(url, hash) {
   const input_data = JSON.stringify({ action: "keys" });
   const relay = acct(RELAY);
   const deposit = await view(OUTLAYER, "estimate_execution_cost", { resource_limits: limits, input_len: input_data.length });
-  const o = await call(
-    relay,
-    OUTLAYER,
-    "request_execution",
-    {
-      source: { WasmUrl: { url, hash, build_target: "wasm32-wasip2" } },
-      resource_limits: limits,
-      input_data,
-      secrets_ref: { profile: "clerk", account_id: RELAY },
-      response_format: "Json",
-      payer_account_id: RELAY,
-    },
-    { deposit: BigInt(deposit), tgas: 300 },
-  );
+  const finished = await sendAndPoll(relay, provider, OUTLAYER, [
+    actions.functionCall(
+      "request_execution",
+      {
+        source: { WasmUrl: { url, hash, build_target: "wasm32-wasip2" } },
+        resource_limits: limits,
+        input_data,
+        secrets_ref: { profile: CLERK_PROFILE, account_id: RELAY },
+        response_format: "Json",
+        payer_account_id: RELAY,
+      },
+      teraToGas(300),
+      BigInt(deposit),
+    ),
+  ]);
+  const o = outcome(finished);
   if (o.value?.error) throw new Error(`the clerk refused: ${o.value.error}`);
   if (o.value?.prompt_sha256 !== sha256hex(PROMPT)) throw new Error("that build carries a different prompt from this repo");
   return { keys: o.value, tx: o.hash };
 }
 
-async function pinEnclave(url, hash) {
-  if (!url || !/^[0-9a-f]{64}$/.test(hash ?? "")) throw new Error("usage: deploy.mjs enclave <wasm url> <lowercase sha256>");
+/** One file on FastFS, as borsh: enum variant 0, then path, Some, mime type and content. */
+function fastfsPayload(path, mime, content) {
+  const sized = (bytes) => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32LE(bytes.length);
+    return Buffer.concat([length, bytes]);
+  };
+  return Buffer.concat([Buffer.from([0]), sized(Buffer.from(path)), Buffer.from([1]), sized(Buffer.from(mime)), sized(content)]);
+}
+
+/**
+ * Publishes the build on FastFS. The call has one gas on purpose: it fails, and the
+ * indexer reads the file from its arguments. A file appears a minute or two later.
+ */
+async function uploadClerk(code, hash) {
+  const url = `https://test.fastfs.io/${RELAY}/${OUTLAYER}/${hash}.wasm`;
+  if ((await fetch(url, { method: "HEAD" })).ok) return url;
+  await acct(RELAY).signAndSendTransaction({
+    receiverId: OUTLAYER,
+    actions: [actions.functionCall("__fastdata_fastfs", fastfsPayload(`${hash}.wasm`, "application/wasm", code), 1n, 0n)],
+    waitUntil: "INCLUDED",
+    throwOnFailure: false,
+  });
+  for (let i = 0; i < 60; i++) {
+    await new Promise((done) => setTimeout(done, 5000));
+    if ((await fetch(url, { method: "HEAD" })).ok) return url;
+  }
+  throw new Error(`${url} did not appear`);
+}
+
+async function postJson(url, body) {
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
+  return res.json();
+}
+
+/** OutLayer's keystore format: [1 | ephemeral X25519 key | nonce | ChaCha20-Poly1305]. */
+function encryptToKeystore(pubkeyHex, plaintext) {
+  const ephemeral = randomBytes(32);
+  const key = hkdf(sha256, x25519.getSharedSecret(ephemeral, hexToBytes(pubkeyHex)), undefined, utf8ToBytes("outlayer-keystore-v1"), 32);
+  const nonce = randomBytes(12);
+  const sealed = chacha20poly1305(key, nonce).encrypt(utf8ToBytes(plaintext));
+  return Buffer.concat([Buffer.from([1]), x25519.getPublicKey(ephemeral), nonce, sealed]).toString("base64");
+}
+
+/**
+ * Stores the clerk's secrets against this exact build. The seed is generated inside
+ * the keystore's enclave and never leaves it, and only the relay may run the build.
+ */
+async function storeClerkSecrets(hash, apiKey) {
+  const accessor = { type: "WasmHash", hash };
+  const base = { accessor, owner: RELAY, profile: CLERK_PROFILE };
+  const secrets = JSON.stringify({ NEAR_AI_API_KEY: apiKey });
+  const { pubkey } = await postJson(`${OUTLAYER_API}/secrets/pubkey`, { ...base, secrets_json: secrets });
+  const generated = await postJson(`${OUTLAYER_API}/secrets/add_generated_secret`, {
+    ...base,
+    encrypted_secrets_base64: encryptToKeystore(pubkey, secrets),
+    new_secrets: [{ name: "PROTECTED_CLERK_SEED", generation_type: "hex32" }],
+  });
+  await call(
+    acct(RELAY),
+    OUTLAYER,
+    "store_secrets",
+    {
+      accessor: { WasmHash: { hash } },
+      profile: CLERK_PROFILE,
+      encrypted_secrets_base64: generated.encrypted_data_base64,
+      access: { Whitelist: { accounts: [RELAY] } },
+      vault_id: null,
+    },
+    { deposit: near("0.1"), tgas: 50 },
+  );
+}
+
+async function pinEnclave() {
+  if (!existsSync(CLERK_WASM)) throw new Error("build the clerk first: cargo build -p tideover-clerk --target wasm32-wasip2 --release");
+  const apiKey = process.env.NEAR_AI_API_KEY ?? existingAiKey();
+  if (!apiKey) throw new Error("the clerk needs NEAR_AI_API_KEY, in the environment or in web/.env.local");
+  const code = readFileSync(CLERK_WASM);
+  const hash = sha256hex(code);
+  log("  clerk build", hash);
+  const url = await uploadClerk(code, hash);
+  log("  published at", url);
+  await storeClerkSecrets(hash, apiKey);
+  log("  secrets stored");
   const { keys, tx } = await enclaveKeys(url, hash);
   log("  the enclave's keys:", keys.signer, keys.encryption_key, `(${tx})`);
   await pinClerk(keys, hash, `enclave build ${hash.slice(0, 12)}…`);
@@ -226,7 +318,7 @@ function writeOutputs() {
     council: COUNCIL,
     guardians: [COUNCIL[0]],
     seededMembers: MEMBERS.map(([n]) => sub(n)),
-    clerk: S.clerk ? { keysTx: S.clerk.keysTx, wasmUrl: S.clerk.url } : {},
+    clerk: S.clerk ? { keysTx: S.clerk.keysTx, keysSender: RELAY, wasmUrl: S.clerk.url } : {},
     transactions: S.txs,
   });
   const env = [
@@ -255,7 +347,7 @@ async function main() {
   const demoPub = KeyPair.fromString(S.demoKey).getPublicKey();
 
   if (process.argv[2] === "enclave") {
-    await pinEnclave(process.argv[3], process.argv[4]);
+    await pinEnclave();
     writeOutputs();
     return;
   }
@@ -263,9 +355,10 @@ async function main() {
   await step("accounts", async () => {
     await ensureAccount(TOKEN, 3);
     await ensureAccount(FACTORY, 7.6);
-    await ensureAccount(RELAY, 1.5);
+    await ensureAccount(RELAY, 2.5);
     await ensureAccount(JOINER, 1);
-    await ensureAccount(COUNCIL[0], 6.7, [actions.addFunctionCallAccessKey(demoPub, DAO, ["act_proposal"], near(1))]);
+    // The DAO takes 6 NEAR, and a new DAO's first proposal needs a 1 NEAR bond.
+    await ensureAccount(COUNCIL[0], 7.8, [actions.addFunctionCallAccessKey(demoPub, DAO, ["act_proposal"], near(1))]);
     for (const c of COUNCIL.slice(1)) await ensureAccount(c, 0.3, [actions.addFunctionCallAccessKey(demoPub, DAO, ["act_proposal"], near(1))]);
   });
 

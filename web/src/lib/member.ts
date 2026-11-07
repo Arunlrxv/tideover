@@ -8,7 +8,7 @@ import { allLeaves, getClaim, getFund, getMember, groupSize } from "./chain";
 import { D, RPCS } from "./config";
 import { sealTo, sealedPayload, sha256hex } from "./sealed.mjs";
 import type { Claim, Card, FundView, Leaf, MemberView } from "./types";
-import { commitmentOf, newSecret, proveClaim, type ClaimProof } from "./zk";
+import { commitmentOf, newSecret, nullifierOf, proveClaim, type ClaimProof } from "./zk";
 
 const provider = new FailoverRpcProvider(RPCS.map((url) => new JsonRpcProvider({ url }, { retries: 1, wait: 300, backoff: 2 })));
 
@@ -114,11 +114,11 @@ function lowestTierFor(fund: FundView, amount: string, mine: number) {
  * bigger than whoever has paid so far this month, and the claim hides in a bigger
  * crowd. On a tie, the first entry wins, and that is last month.
  */
-async function bestGroup(fund: FundView, member: MemberView, requestedTier: number | undefined, amount: string) {
+async function bestGroup(fund: FundView, member: MemberView, amount: string) {
   const usable = [member.prev_leaf, member.leaf].filter((l): l is Leaf => l !== null && l.period + 1 >= fund.period);
   if (!usable.length) throw new Error("Pay this month's dues first");
   const mine = Math.max(...usable.map((l) => l.tier));
-  const minTier = requestedTier ?? lowestTierFor(fund, amount, mine);
+  const minTier = lowestTierFor(fund, amount, mine);
   const sized = await Promise.all(
     usable.filter((l) => l.tier >= minTier).map(async (leaf) => ({ leaf, size: await groupSize(leaf.period, minTier) })),
   );
@@ -132,12 +132,13 @@ async function bestGroup(fund: FundView, member: MemberView, requestedTier: numb
 }
 
 /** Everything that happens on this device before anything is sent. */
-export async function prepareClaim(m: LocalMember, amount: string, payout: string, document: string, requestedTier?: number): Promise<Prepared> {
+export async function prepareClaim(m: LocalMember, amount: string, payout: string, document: string): Promise<Prepared> {
   const [fund, member] = await Promise.all([getFund(), getMember(m.account)]);
   if (!fund.reviewer) throw new Error("This fund has not pinned a clerk yet");
   if (!member) throw new Error("Join the fund first");
-  const { leaf, minTier } = await bestGroup(fund, member, requestedTier, amount);
-  const envelope = sealTo(fund.reviewer.encryption_key, sealedPayload({ fund: D.fund, amount, payout, document }));
+  const { leaf, minTier } = await bestGroup(fund, member, amount);
+  const nullifier = await nullifierOf(m.secret, D.fund, fund.window);
+  const envelope = sealTo(fund.reviewer.encryption_key, sealedPayload({ fund: D.fund, cycle: fund.cycle, nullifier, amount, payout, document }));
   const evidenceSha256 = sha256hex(envelope);
   const leaves = await allLeaves(fund.leaves);
   const proof = await proveClaim({

@@ -67,8 +67,8 @@ Design details: [docs/DESIGN.md](docs/DESIGN.md).
 
 | Item | State |
 |---|---|
-| Contract tests, with real proofs and a simulated clerk | 84 pass |
-| Sealed clerk tests | 17 pass |
+| Contract tests, with real proofs and a simulated clerk | 87 pass |
+| Sealed clerk tests | 18 pass |
 | Membership library tests | 16 pass |
 | Secret ballot example tests | 5 pass |
 | Browser crypto tests | 13 pass |

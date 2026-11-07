@@ -1026,7 +1026,7 @@ fn dao_says(status: &str) -> PromiseResult {
 }
 
 /// A panel-approved claim whose proposal has been filed and voted for.
-fn voted_claim() -> (World, U64) {
+fn paying_claim() -> (World, U64) {
     let (mut w, id) = reviewed(250 * USD, "supported", false);
     let panel = panel_of(&w, id);
     for voter in &panel[..2] {
@@ -1036,6 +1036,11 @@ fn voted_claim() -> (World, U64) {
     w.at(acc("anyone.testnet"));
     w.c.advance(id);
     assert_eq!(status(&w, id), ClaimStatus::Paying);
+    (w, id)
+}
+
+fn voted_claim() -> (World, U64) {
+    let (mut w, id) = paying_claim();
     set_callback(w.now, PromiseResult::Successful(b"12".to_vec()));
     assert!(w.c.on_proposal_added(id, true, Ok(12)).is_some());
     assert_eq!(w.c.get_claim(id).unwrap().proposal_id, Some(12));
@@ -1067,6 +1072,50 @@ fn a_payment_cannot_be_confirmed_early() {
     read(&mut w, id, "Approved");
     w.at(acc("anyone.testnet"));
     w.c.advance(id);
+}
+
+#[test]
+fn a_second_read_cannot_confirm_a_payment_early() {
+    // Two `advance` calls around the deciding council vote both read the proposal.
+    // The first read starts the wait, and the second must not end it.
+    let (mut w, id) = council_claim();
+    read(&mut w, id, "Approved");
+    read(&mut w, id, "Approved");
+    assert_eq!(status(&w, id), ClaimStatus::Settling);
+    assert_eq!(w.c.get_fund().paid_out.0, 0);
+}
+
+fn time_out_the_filing(w: &mut World, id: U64) {
+    w.now += IN_FLIGHT_SECS + 1;
+    w.at(acc("anyone.testnet"));
+    w.c.advance(id);
+    assert_eq!(status(w, id), ClaimStatus::Approved);
+}
+
+#[test]
+fn a_delayed_answer_cannot_put_a_second_approved_proposal_on_a_claim() {
+    let (mut w, id) = paying_claim();
+    time_out_the_filing(&mut w, id);
+    w.at(acc("anyone.testnet"));
+    w.c.advance(id);
+    assert_eq!(status(&w, id), ClaimStatus::Paying);
+
+    // Both filings now answer. Only one proposal gets the fund's vote.
+    set_callback(w.now, PromiseResult::Successful(b"12".to_vec()));
+    assert!(w.c.on_proposal_added(id, true, Ok(12)).is_some());
+    set_callback(w.now, PromiseResult::Successful(b"13".to_vec()));
+    assert!(w.c.on_proposal_added(id, true, Ok(13)).is_none());
+    assert_eq!(w.c.get_claim(id).unwrap().proposal_id, Some(12));
+}
+
+#[test]
+fn a_delayed_answer_is_ignored_once_the_claim_has_moved_on() {
+    let (mut w, id) = paying_claim();
+    time_out_the_filing(&mut w, id);
+    set_callback(w.now, PromiseResult::Successful(b"12".to_vec()));
+    assert!(w.c.on_proposal_added(id, true, Ok(12)).is_none());
+    assert_eq!(status(&w, id), ClaimStatus::Approved);
+    assert_eq!(w.c.get_claim(id).unwrap().proposal_id, None);
 }
 
 #[test]

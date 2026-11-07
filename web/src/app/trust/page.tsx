@@ -3,7 +3,7 @@
 import { useLive } from "@/components/Ledger";
 import { getFund } from "@/lib/chain";
 import { accountUrl, D } from "@/lib/config";
-import { shortHex } from "@/lib/format";
+import { SERVER_CLERK, shortHex } from "@/lib/format";
 import { MODEL, PROMPT, sha256hex } from "@/lib/sealed.mjs";
 
 export default function TrustPage() {
@@ -111,14 +111,18 @@ export default function TrustPage() {
               the model over TLS and does not check the model&apos;s attestation itself yet.
             </li>
             <li>
+              <strong>The clerk&apos;s build can&apos;t be reproduced yet.</strong> The attestation proves which build ran, and the code is
+              public, but rebuilding the same hash takes the same setup, so for now you are trusting whoever built it.
+            </li>
+            <li>
               <strong>A clerk on a server is not private.</strong> Before a fund pins an enclave build, the same steps run on the
               demo&apos;s server, and that server could read a document. The check below says which one this fund is using. Use invented
               documents until it says enclave.
             </li>
             <li>
               <strong>A relay can hold a card back.</strong> It can&apos;t change a card, because the clerk&apos;s signature covers it, but it could
-              sit on one. The claim then goes to people instead, so nothing is lost, and panelists are told that a missing card proves
-              nothing.
+              sit on one, or run the clerk twice and post the answer it prefers. Without a card the claim goes to people, so nothing is
+              lost, and panelists are told that a missing card proves nothing.
             </li>
             <li>
               <strong>A claimant can be drawn onto their own panel.</strong> Nobody knows who they are, so they can&apos;t be excluded. Two of
@@ -162,23 +166,40 @@ function ClerkCheck() {
   const { data } = useLive(async () => {
     const [fund, res] = await Promise.all([getFund(), fetch("/api/attestation")]);
     const report = res.ok ? await res.json() : null;
-    return { fund, build: (report?.build ?? null) as string | null, model: Boolean(report?.model) };
+    return {
+      fund,
+      build: (report?.build ?? null) as string | null,
+      keys: (report?.keys ?? null) as { signer: string; encryption_key: string } | null,
+      tx: (report?.tx ?? null) as string | null,
+      model: Boolean(report?.model),
+    };
   }, 60000);
   const pinned = data?.fund.reviewer;
-  const enclave = Boolean(pinned && /^[0-9a-f]{64}$/.test(pinned.code_hash));
+  const sameBuild = Boolean(pinned && data?.build && pinned.code_hash === data.build);
+  const sameKeys = Boolean(pinned && data?.keys && pinned.signer === data.keys.signer && pinned.encryption_key === data.keys.encryption_key);
   const localPrompt = sha256hex(PROMPT);
   return (
     <div className="card">
       <h3>The sealed clerk, checked live</h3>
       <dl className="kv small">
         <dt>Where it runs</dt>
-        <dd>{pinned ? enclave ? <span className="chip good">In an enclave</span> : <span className="chip stop">On a server, so not private yet</span> : "–"}</dd>
+        <dd>
+          {!pinned ? (
+            "–"
+          ) : sameBuild && sameKeys ? (
+            <span className="chip good">In an enclave, attested</span>
+          ) : pinned.code_hash === SERVER_CLERK ? (
+            <span className="chip stop">On a server, so not private yet</span>
+          ) : (
+            <span className="chip stop">Not proven: do not seal a real document</span>
+          )}
+        </dd>
         <dt>Build the DAO pinned</dt>
-        <dd className="mono">{enclave ? shortHex(pinned!.code_hash, 10) : "–"}</dd>
-        <dt>Build that made these keys</dt>
+        <dd className="mono">{pinned && pinned.code_hash !== SERVER_CLERK ? shortHex(pinned.code_hash, 10) : "–"}</dd>
+        <dt>Build that made its keys</dt>
         <dd className="mono">{data?.build ? shortHex(data.build, 10) : "–"}</dd>
-        <dt>Same build</dt>
-        <dd>{enclave && data?.build ? pinned!.code_hash === data.build ? <span className="chip good">Yes</span> : <span className="chip stop">Different: the DAO must re-pin</span> : "–"}</dd>
+        <dt>Keys that build printed</dt>
+        <dd>{data?.keys ? sameKeys ? <span className="chip good">Same as the pinned keys</span> : <span className="chip stop">Different from the pinned keys</span> : "–"}</dd>
         <dt>Signing key</dt>
         <dd className="mono">{pinned ? shortHex(pinned.signer, 10) : "–"}</dd>
         <dt>Encryption key</dt>
@@ -194,6 +215,12 @@ function ClerkCheck() {
         <dt>Fund</dt>
         <dd>{D.fund ? <a href={accountUrl(D.fund)}>{D.fund}</a> : "–"}</dd>
       </dl>
+      {data?.tx && (
+        <p className="small muted" style={{ marginTop: 12 }}>
+          This page reads those records for you. To check the Intel quote behind them yourself, run{" "}
+          <code className="break-all">outlayer-verify tx {data.tx}</code>
+        </p>
+      )}
       <details style={{ marginTop: 12 }}>
         <summary>Read the full prompt</summary>
         <p className="small muted" style={{ marginTop: 10 }}>
