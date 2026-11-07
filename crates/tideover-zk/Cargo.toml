@@ -38,7 +38,7 @@ ark-groth16 = { workspace = true, optional = true }
 borsh.workspace = true
 sha2.workspace = true
 hex.workspace = true
-getrandom = { version = "0.3", optional = true }
+getrandom = { version = "0.2", optional = true }
 
 [[bin]]
 name = "gen-consts"

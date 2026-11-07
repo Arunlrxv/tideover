@@ -12,7 +12,7 @@ use tideover_zk::keys;
 fn main() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut seed = [0u8; 32];
-    getrandom::fill(&mut seed).expect("OS randomness");
+    getrandom::getrandom(&mut seed).expect("OS randomness");
     let mut rng = StdRng::from_seed(seed);
     let (pk, vk) = keys::setup(&mut rng);
     // The seed and the stream it drives are dropped here and never written anywhere.

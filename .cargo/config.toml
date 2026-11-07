@@ -3,3 +3,8 @@
 # (scripts/build-wasm.ps1) overrides RUSTFLAGS.
 [target.wasm32-unknown-unknown]
 rustflags = ["-C", "link-arg=-s", "--cfg", "near"]
+
+# Windows with the GNU toolchain only: getrandom's default backend needs an assembler that the
+# toolchain does not ship. The legacy backend links normally. No effect on any other platform.
+[target.x86_64-pc-windows-gnu]
+rustflags = ["--cfg", 'getrandom_backend="windows_legacy"']

@@ -4,6 +4,21 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
+description = "A private hardship fund on top of a Sputnik DAO"
 
 [lib]
-path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk.workspace = true
+tideover-zk = { path = "../../crates/tideover-zk", default-features = false }
+hex.workspace = true
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+curve25519-dalek = { version = "4", default-features = false }
+
+[dev-dependencies]
+near-sdk = { workspace = true, features = ["unit-testing"] }
+tideover-zk = { path = "../../crates/tideover-zk", features = ["prover"] }
+ed25519-dalek = "2"
+ark-groth16 = { workspace = true, features = ["std"] }
+ark-bls12-381 = { workspace = true, features = ["std"] }

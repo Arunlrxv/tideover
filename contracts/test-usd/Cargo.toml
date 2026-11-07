@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
+description = "A testnet dollar with an open faucet, for the Tideover demo"
 
 [lib]
-path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk.workspace = true
+near-contract-standards.workspace = true

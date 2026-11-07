@@ -40,6 +40,20 @@ pub fn scope(group: &str, cycle: u64) -> Fr {
     ])
 }
 
+/// What a claim proof authorises. It is bound into the proof, so a relay cannot
+/// change the amount, the payout or the evidence.
+pub fn signal(group: &str, amount: u128, payout: &str, evidence_sha256: &[u8; 32]) -> Fr {
+    let mut m = Vec::with_capacity(96 + group.len() + payout.len());
+    m.extend_from_slice(b"tideover/claim/v1\0");
+    m.extend_from_slice(group.as_bytes());
+    m.push(0);
+    m.extend_from_slice(&amount.to_le_bytes());
+    m.extend_from_slice(payout.as_bytes());
+    m.push(0);
+    m.extend_from_slice(evidence_sha256);
+    bytes_to_fr(&m)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

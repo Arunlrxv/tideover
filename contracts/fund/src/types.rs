@@ -1,0 +1,194 @@
+use near_sdk::json_types::{U128, U64};
+use near_sdk::{near, AccountId};
+
+/// A cover level. `min_score` is paid periods plus panel service.
+#[near(serializers = [json, borsh])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Tier {
+    pub min_score: u32,
+    /// The most one claim can ask for at this level.
+    pub cap: U128,
+}
+
+/// A fund's rules, set by the DAO. Amounts are in the token's smallest unit.
+#[near(serializers = [json, borsh])]
+#[derive(Clone, Debug)]
+pub struct Rules {
+    pub dues: U128,
+    pub period_secs: u64,
+    /// One claim per member per cycle.
+    pub periods_per_cycle: u32,
+    pub tiers: Vec<Tier>,
+    /// At or below this, a well-supported claim pays after the veto window.
+    pub auto_limit: U128,
+    /// At or below this, a panel of members decides. Above it, the council does.
+    pub panel_limit: U128,
+    /// The most that can be committed to claims in one cycle.
+    pub cycle_budget: U128,
+    pub panel_size: u8,
+    pub panel_quorum: u8,
+    pub review_window_secs: u64,
+    pub veto_window_secs: u64,
+    pub panel_window_secs: u64,
+    /// Must match the DAO's own `proposal_bond`.
+    pub proposal_bond: U128,
+    pub token_decimals: u8,
+}
+
+/// What the sealed reader reports. Every field is a closed set of values, so it
+/// cannot carry a name or a sentence out of the sealed document.
+#[near(serializers = [json, borsh])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Card {
+    pub category: String,
+    pub document: String,
+    pub recent: bool,
+    pub amount_matches: String,
+    pub injection: bool,
+    pub assessment: String,
+}
+
+#[near(serializers = [json, borsh])]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Route {
+    /// Paid after the veto window, with no vote.
+    Auto,
+    /// Decided by randomly drawn members who never see a name.
+    Panel,
+    /// Decided by the DAO council through a normal proposal.
+    Council,
+}
+
+#[near(serializers = [json, borsh])]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ClaimStatus {
+    AwaitingReview,
+    VetoWindow,
+    PanelVoting,
+    NeedsCouncil,
+    CouncilVote,
+    Approved,
+    Paying,
+    Paid,
+    Rejected,
+}
+
+#[near(serializers = [json, borsh])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PanelVote {
+    pub member: AccountId,
+    pub approve: bool,
+}
+
+/// A claim as it sits on chain. There is no name and no reason here: only what
+/// is needed to check that every rule was followed.
+#[near(serializers = [json, borsh])]
+#[derive(Clone, Debug)]
+pub struct Claim {
+    pub id: U64,
+    pub cycle: u64,
+    pub filed_at: U64,
+    pub min_tier: u8,
+    pub amount: U128,
+    pub payout: AccountId,
+    pub status: ClaimStatus,
+    pub route: Option<Route>,
+    pub card: Option<Card>,
+    /// When the current stage ends, in nanoseconds.
+    pub deadline: U64,
+    pub nonce: String,
+    pub evidence_sha256: String,
+    pub panel: Vec<AccountId>,
+    pub votes: Vec<PanelVote>,
+    pub proposal_id: Option<u64>,
+    pub paid_at: Option<U64>,
+    pub note: Option<String>,
+    // Everything below lets anyone re-check this claim away from the contract.
+    pub root: String,
+    pub nullifier: String,
+    pub period: u64,
+    pub proof: String,
+    pub signed_text: Option<String>,
+    pub signature: Option<String>,
+}
+
+#[near(serializers = [json, borsh])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Leaf {
+    pub position: u64,
+    pub period: u64,
+    pub tier: u8,
+}
+
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug)]
+pub struct Member {
+    pub commitment: Option<[u8; 32]>,
+    pub joined_at: u64,
+    pub paid_periods: u32,
+    pub service_points: u32,
+    pub last_paid_period: Option<u64>,
+    pub leaf: Option<Leaf>,
+    pub active: bool,
+}
+
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct MemberView {
+    pub account: AccountId,
+    pub commitment: Option<String>,
+    pub joined_at: U64,
+    pub paid_periods: u32,
+    pub service_points: u32,
+    pub last_paid_period: Option<u64>,
+    pub leaf: Option<Leaf>,
+    pub active: bool,
+    pub score: u32,
+    pub tier: u8,
+    pub cap: U128,
+    pub paid_this_period: bool,
+}
+
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug)]
+pub struct Reviewer {
+    pub model_id: String,
+    pub signer: [u8; 32],
+    pub signer_x25519: [u8; 32],
+    pub prompt_sha256: [u8; 32],
+    pub max_tokens: u32,
+}
+
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct ReviewerView {
+    pub model_id: String,
+    pub signer: String,
+    pub prompt_sha256: String,
+    pub max_tokens: u32,
+}
+
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct FundView {
+    pub dao: AccountId,
+    pub token: AccountId,
+    pub rules: Rules,
+    pub guardians: Vec<AccountId>,
+    pub registrar: Option<AccountId>,
+    pub paused: bool,
+    pub started_at: U64,
+    pub period: u64,
+    pub cycle: u64,
+    pub members: u32,
+    pub paid_up: u32,
+    pub leaves: u64,
+    pub root: String,
+    pub claims: u32,
+    pub cycle_committed: U128,
+    pub dues_collected: U128,
+    pub paid_out: U128,
+    pub unforwarded: U128,
+    pub spare_near: U128,
+    pub reviewer: Option<ReviewerView>,
+}
