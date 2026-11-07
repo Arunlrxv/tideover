@@ -3,7 +3,7 @@
 import { Account, FailoverRpcProvider, JsonRpcProvider, actions, teraToGas } from "near-api-js";
 import { RPCS } from "../config";
 
-export const provider = new FailoverRpcProvider([RPCS[1], RPCS[0], RPCS[2]].map((url) => new JsonRpcProvider({ url }, { retries: 1, wait: 300, backoff: 2 })));
+export const provider = new FailoverRpcProvider([RPCS[2], RPCS[0], RPCS[1]].map((url) => new JsonRpcProvider({ url }, { retries: 1, wait: 300, backoff: 2 })));
 
 export function need(name: string) {
   const v = process.env[name];

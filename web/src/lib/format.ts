@@ -47,9 +47,11 @@ export const STATUS_LABEL: Record<ClaimStatus, string> = {
   VetoWindow: "Veto window",
   PanelVoting: "With a panel",
   NeedsCouncil: "Going to council",
+  Filing: "Going to council",
   CouncilVote: "With the council",
   Approved: "Approved",
   Paying: "Paying",
+  Settling: "Paying",
   Paid: "Paid",
   Rejected: "Declined",
 };

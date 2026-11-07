@@ -9,12 +9,16 @@ import { getClaim, getFund, getProposal, tokenBalance } from "@/lib/chain";
 import { D, accountUrl } from "@/lib/config";
 import { ROUTE_LABEL, STATUS_LABEL, cardLines, dateOf, secondsLeft, shortAccount, shortHex, usd } from "@/lib/format";
 import { advance, loadClaims } from "@/lib/member";
-import type { Claim, FundView } from "@/lib/types";
+import { cardMessage } from "@/lib/sealed.mjs";
+import type { Claim, ClaimStatus, FundView } from "@/lib/types";
 import { auditClaim } from "@/lib/zk";
 
 type Audit = { proof: boolean | null; signature: boolean | null; ran: boolean };
 
 const unhex = (s: string) => Uint8Array.from(s.match(/../g)!.map((b) => parseInt(b, 16)));
+
+/** Stages that end at a deadline. Each one waits a moment past it, for the chain's clock. */
+const TIMED: ClaimStatus[] = ["AwaitingReview", "VetoWindow", "PanelVoting", "Filing", "Paying", "Settling", "CouncilVote"];
 
 export default function ClaimDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -37,8 +41,8 @@ export default function ClaimDetail({ params }: { params: Promise<{ id: string }
     const due =
       claim.status === "Approved" ||
       claim.status === "NeedsCouncil" ||
-      (claim.status === "CouncilVote" && data?.proposal?.status !== "InProgress") ||
-      ((claim.status === "AwaitingReview" || claim.status === "VetoWindow" || claim.status === "PanelVoting") && secondsLeft(claim.deadline) <= -2);
+      (claim.status === "CouncilVote" && data?.proposal && data.proposal.status !== "InProgress") ||
+      (TIMED.includes(claim.status) && secondsLeft(claim.deadline) <= -2);
     if (!due) return;
     advancing.current = true;
     advance(claim.id)
@@ -46,7 +50,7 @@ export default function ClaimDetail({ params }: { params: Promise<{ id: string }
       .finally(() => {
         advancing.current = false;
       });
-  }, [claim, data?.proposal?.status]);
+  }, [claim, data?.proposal]);
 
   useEffect(() => {
     if (claim?.status !== "Paid") return;
@@ -68,6 +72,7 @@ export default function ClaimDetail({ params }: { params: Promise<{ id: string }
         min_tier: c.min_tier,
         nullifier: c.nullifier,
         fund: D.fund,
+        cycle: c.cycle,
         window: c.window,
         amount: c.amount,
         payout: c.payout,
@@ -77,9 +82,18 @@ export default function ClaimDetail({ params }: { params: Promise<{ id: string }
       proof = false;
     }
     let signature: boolean | null = null;
-    if (c.signed_text && c.signature && f.reviewer) {
+    if (c.card && c.card_signature && f.reviewer) {
       try {
-        signature = ed25519.verify(unhex(c.signature), new TextEncoder().encode(c.signed_text), unhex(f.reviewer.signer));
+        const message = cardMessage({
+          fund: D.fund,
+          claim: c.id,
+          nonce: c.nonce,
+          evidenceSha256: c.evidence_sha256,
+          amount: c.amount,
+          payout: c.payout,
+          card: c.card,
+        });
+        signature = ed25519.verify(unhex(c.card_signature), new TextEncoder().encode(message), unhex(f.reviewer.signer));
       } catch {
         signature = false;
       }
@@ -137,10 +151,10 @@ export default function ClaimDetail({ params }: { params: Promise<{ id: string }
                   title="Read by the sealed reader"
                   note={
                     claim.card
-                      ? `Signed by the enclave key the DAO pinned, on the DAO's registered prompt, for this claim's committed evidence.`
+                      ? "Signed by the clerk key the DAO pinned, for this claim's own evidence, amount and payout."
                       : claim.status === "AwaitingReview"
                         ? "Waiting for the reader."
-                        : "The reader did not answer in time, so this claim went to people."
+                        : "No card arrived in time, so this claim went to people."
                   }
                 />
                 <Check
@@ -167,7 +181,7 @@ export default function ClaimDetail({ params }: { params: Promise<{ id: string }
             <div className="card">
               <h3>Don&apos;t take this page&apos;s word for it</h3>
               <p className="muted">
-                This re-checks the stored proof and the enclave&apos;s signature here in your browser, using only public data.
+                This re-checks the stored proof and the clerk&apos;s signature here in your browser, using only public data.
               </p>
               <button className="btn ghost" onClick={() => recheck(claim, fund)}>
                 Re-check this claim here
@@ -175,8 +189,8 @@ export default function ClaimDetail({ params }: { params: Promise<{ id: string }
               {audit.ran && (
                 <ul className="checks" style={{ marginTop: 10 }}>
                   <Check ok={audit.proof === true} wait={audit.proof === null} bad={audit.proof === false} title="Membership proof" note={audit.proof === null ? "Checking…" : audit.proof ? "Verifies against the fund's verifying key." : "Does not verify."} />
-                  {claim.signed_text && (
-                    <Check ok={audit.signature === true} wait={audit.signature === null} bad={audit.signature === false} title="Enclave signature" note={audit.signature === null ? "Checking…" : audit.signature ? `Signed by ${shortHex(fund.reviewer?.signer ?? "")}.` : "Does not verify."} />
+                  {claim.card_signature && (
+                    <Check ok={audit.signature === true} wait={audit.signature === null} bad={audit.signature === false} title="Clerk signature" note={audit.signature === null ? "Checking…" : audit.signature ? `Signed by ${shortHex(fund.reviewer?.signer ?? "")}.` : "Does not verify."} />
                   )}
                 </ul>
               )}
@@ -252,7 +266,9 @@ export default function ClaimDetail({ params }: { params: Promise<{ id: string }
 function decisionNote(c: Claim, left: number) {
   if (c.status === "VetoWindow") return left > 0 ? `A guardian can stop this for ${left} more seconds.` : "The veto window has closed.";
   if (c.status === "PanelVoting") return `${c.votes.length} of ${c.panel.length} have voted.`;
-  if (c.status === "NeedsCouncil") return "Being filed as a normal DAO proposal.";
+  if (c.status === "NeedsCouncil" || c.status === "Filing") return "Being filed as a normal DAO proposal.";
+  if (c.status === "Paying") return "The DAO is approving the transfer.";
+  if (c.status === "Settling") return c.note ?? "Approved. Confirming on the DAO that the money moved.";
   if (c.status === "CouncilVote") return "A normal DAO proposal, with no name and no reason on it.";
   if (c.status === "Rejected") return c.note ?? "Declined.";
   if (c.status === "Paid") return c.route === "Auto" ? "No guardian stopped it." : c.note ?? "Approved.";

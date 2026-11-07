@@ -76,6 +76,7 @@ impl MembershipCircuit {
     }
 
     /// Builds a claim witness from the full leaf list.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_leaves(
         secret: Fr,
         tier: u8,
@@ -152,9 +153,8 @@ impl ConstraintSynthesizer<Fr> for MembershipCircuit {
         let mut cur = leaf;
         assert_eq!(self.siblings.len(), TREE_DEPTH);
         for (level, sibling) in self.siblings.iter().enumerate() {
-            let is_right = Boolean::new_witness(cs.clone(), || {
-                Ok((self.position >> level) & 1 == 1)
-            })?;
+            let is_right =
+                Boolean::new_witness(cs.clone(), || Ok((self.position >> level) & 1 == 1))?;
             let sib = FpVar::new_witness(cs.clone(), || Ok(*sibling))?;
             let left = FpVar::conditionally_select(&is_right, &sib, &cur)?;
             let right = FpVar::conditionally_select(&is_right, &cur, &sib)?;

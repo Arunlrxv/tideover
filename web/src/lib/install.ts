@@ -5,13 +5,15 @@ const USD = 1_000_000n;
 const usd = (n: bigint) => String(n * USD);
 
 /** Sensible starting rules for a real community, with days rather than the demo's seconds. */
-export function defaultRules(duesDollars: number, proposalBond: string) {
+export function defaultRules(duesDollars: number, proposalBond: string, proposalPeriodNs: string) {
   const day = 24 * 3600;
+  const proposalSecs = Number(BigInt(proposalPeriodNs) / 1_000_000_000n);
   return {
     dues: usd(BigInt(duesDollars)),
     period_secs: 30 * day,
     periods_per_cycle: 3,
     window_cycles: 4,
+    min_group: 5,
     tiers: [
       { min_score: 0, cap: "0", year_cap: "0" },
       { min_score: 3, cap: usd(100n), year_cap: usd(200n) },
@@ -26,6 +28,8 @@ export function defaultRules(duesDollars: number, proposalBond: string) {
     review_window_secs: 3600,
     veto_window_secs: day,
     panel_window_secs: 3 * day,
+    // A day past the DAO's own voting period, so the proposal has expired by then.
+    council_window_secs: proposalSecs + day,
     proposal_bond: proposalBond,
     token_decimals: 6,
   };
@@ -39,6 +43,7 @@ export type InstallInput = {
   guardian: string;
   duesDollars: number;
   bond: string;
+  proposalPeriod: string;
   deposit: string;
 };
 
@@ -49,7 +54,7 @@ export function createFundProposal(i: InstallInput) {
     name: i.name,
     dao: i.dao,
     token: D.token,
-    rules: defaultRules(i.duesDollars, i.bond),
+    rules: defaultRules(i.duesDollars, i.bond, i.proposalPeriod),
     guardians: i.guardian ? [i.guardian] : [],
     registrar: null,
   };
@@ -75,7 +80,7 @@ export function roleProposal(name: string) {
           role: {
             name: "tideover",
             kind: { Group: [fundAccount(name)] },
-            permissions: ["transfer:AddProposal", "transfer:VoteApprove"],
+            permissions: ["transfer:AddProposal", "transfer:VoteApprove", "transfer:Finalize"],
             vote_policy: { transfer: { weight_kind: "RoleWeight", quorum: "0", threshold: [1, 1] } },
           },
         },

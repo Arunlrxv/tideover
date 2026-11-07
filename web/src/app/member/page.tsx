@@ -80,8 +80,8 @@ export default function MemberPage() {
               <div className="card">
                 <h3>Start as a new member</h3>
                 <p className="muted">
-                  You&apos;ll get a named account, 100 test dollars and a record of seven paid months, so you can try a claim
-                  straight away.
+                  You&apos;ll get a named account, 100 test dollars and a record of twelve paid months, so you can try any size of
+                  claim straight away.
                 </p>
                 <button className="btn" onClick={join} disabled={Boolean(busy)}>
                   Join the fund

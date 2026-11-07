@@ -2,7 +2,7 @@
 
 A private hardship fund for communities that keep their money in a Sputnik DAO. Members pay dues into the DAO. When someone needs help, nobody can see who asked or why, and anyone can check that every rule was followed.
 
-Built at NEAR HACKATHON, 1 to 14 November 2026. Tracks: Social Money (`social`), Privacy & Private AI (`privacy`).
+Built at NEAR HACKATHON, 1 to 14 November 2026. Track: Social Money (`social`).
 
 ## The problem
 
@@ -16,7 +16,7 @@ So a community can run a public treasury or a private hardship fund, but not bot
 |---|---|
 | Earn cover | Dues go straight to the DAO. Each paid month raises a member's limit. |
 | Ask anonymously | A zero-knowledge proof shows a paid-up member made this claim, not which one. |
-| Seal the reason | The document is encrypted in the browser, so only an AI model in a secure enclave reads it. It can answer only in closed fields, so it cannot repeat a name. |
+| Seal the reason | The document is encrypted in the browser to a sealed clerk, a small program in a secure enclave. It reads the document with a private AI model and answers only in closed fields, so it cannot repeat a name. |
 | Decide by size | Up to $100: pays after a veto window. Up to $400: three random members decide. Above that: a normal DAO proposal. |
 | Pay and prove | The DAO pays a fresh address. The public ledger shows the amount and a tick for each rule, and no name or reason. |
 
@@ -28,13 +28,13 @@ The AI never moves money. It can only choose a path, and every path is bounded b
 
 Live app: to be added. No wallet is needed.
 
-1. Open **Member** and click **Join the fund**. See a named account, 100 test dollars and seven months of record, all made in seconds. You hold no NEAR.
+1. Open **Member** and click **Join the fund**. See a named account, 100 test dollars and twelve months of record, all made in seconds. You hold no NEAR.
 2. Click **Pay $10**. See your cover appear. The relay paid the gas through a NEP-366 meta-transaction, and the money went to the DAO.
 3. Open **Ask for help** and pick **Hospital bill**. Click **Seal and send**. See the proof finish in about three seconds, then the reader's card.
-4. Open **Ledger** and open your claim. See every rule ticked, with no name or reason on the page. Click **Re-check this claim here** to verify the proof and the enclave's signature in your own browser.
+4. Open **Ledger** and open your claim. See every rule ticked, with no name or reason on the page. Click **Re-check this claim here** to verify the proof and the clerk's signature in your own browser.
 5. Open **Break it** and run each attack. See the contract's own refusal, with the failed transaction.
 6. Back on **Ask for help**, pick **A trick document**, which tells the reader to approve it. It should lose the fast path. If it fools the model, the claim is still capped by the tier and the auto limit, and it can be stopped in the veto window.
-7. Open **Trust** for what this does not hide.
+7. Open **Trust** for what this does not hide, and to see whether the clerk is running in an enclave or on the demo's server.
 
 Without the app: `cd web && npm run e2e` runs the real flow against testnet and checks that the money moved.
 
@@ -59,7 +59,7 @@ Design details: [docs/DESIGN.md](docs/DESIGN.md).
 
 - **[`tideover-zk`](crates/tideover-zk)**: anonymous membership as a library, for any NEAR contract, with a browser prover. [`contracts/anon-poll`](contracts/anon-poll/src/lib.rs) uses it unchanged to give any DAO a secret ballot in about 150 lines.
 - **A module any Sputnik DAO can install** with two proposals, moving no money and changing no multisig.
-- **A pattern for checking NEAR AI on chain without trusting a server.** The response stays encrypted to the member's browser, so even the relay cannot read the verdict's reasoning.
+- **[A sealed clerk](clerk/src/lib.rs) on OutLayer.** A pattern for letting a shared AI model read private documents: encrypt to a small enclave program rather than the model, let it take nothing from its caller but a claim number, and let a DAO pin its build. A shared model decrypts for anyone with an API key, so encrypting straight to it does not protect a document that ends up public.
 - **Membership that needs no NEAR.** Gasless dues let people join who have never held a token.
 - **Stablecoins from any chain.** The Member page shows live NEAR Intents quotes for dues from Solana, Base and Arbitrum. Intents has no testnet, so these do not execute here.
 
@@ -67,16 +67,20 @@ Design details: [docs/DESIGN.md](docs/DESIGN.md).
 
 | Item | State |
 |---|---|
-| Contract tests, with real proofs and a simulated enclave | 57 pass |
+| Contract tests, with real proofs and a simulated clerk | 84 pass |
+| Sealed clerk tests | 17 pass |
 | Membership library tests | 16 pass |
 | Secret ballot example tests | 5 pass |
-| Browser crypto tests | 8 pass |
+| Browser crypto tests | 13 pass |
 | Browser proof accepted by the contract logic | Pass, golden test |
-| Browser-sealed review accepted by the contract logic | Pass, golden test, with a test enclave key |
+| Browser-sealed document opened by the clerk | Pass, golden test |
+| Clerk's wasm run under wasmtime | Pass: keys match the browser code, refusals work, and it reaches a real RPC |
+| All four contracts through NEAR's own wasm preparation at protocol 88 | Pass |
 | Proof time in a real browser | 2.9 s |
 | Live NEAR Intents quotes | Working for 3 chains |
 | Deployed to testnet, real Sputnik DAO flow | **Not yet** |
 | A real NEAR AI review, end to end | **Not yet.** Needs an API key |
+| The clerk running in an OutLayer enclave | **Not yet** |
 | Gas figures | **Not yet measured** on chain |
 | Trezu | **Not tested** |
 
@@ -86,25 +90,30 @@ Written for the people it would protect, in full on the [Trust page](web/src/app
 
 - **Small groups give less cover.** You are hidden among paid-up members at your tier or above.
 - **Amounts and timing are public.** One member's claims within a year can be linked to each other, though not to them.
-- **Sealed documents stay on chain as ciphertext**, because the contract must see the bytes to prove what the model read.
-- **You trust the enclave hardware**, Intel TDX and NVIDIA.
+- **A sealed document sits in a public transaction on its way to the enclave**, as ciphertext only the clerk can open. Anyone who later obtained the clerk's key could read old documents.
+- **You trust enclave hardware**, Intel TDX and NVIDIA. The clerk reaches the model over TLS and does not check its attestation itself yet.
+- **A clerk on a server is not private.** Until a fund pins an enclave build, the demo's server could read a document, and the Trust page says so.
 - **Fraud is capped, not impossible.** AI cannot reliably spot a forged document. [The simulation](sim/solvency.mjs) shows what the limits do: over 10,000 three-year runs of a 40-member fund, one persistent cheat takes about 15% of dues, and honest members still receive 96% of the dollars they ask for. Four cheats take about 52%. These numbers rest on assumed catch rates. A fund of people who know each other is the real defence.
 - **The zero-knowledge setup was run by one party**, and the contracts are unaudited. Do not use real money with this version.
 
 ## Run it yourself
 
-Needs Rust with the `wasm32-unknown-unknown` target, and Node 24 or later.
+Needs Rust with the `wasm32-unknown-unknown` and `wasm32-wasip2` targets, and Node 24 or later.
 
 ```bash
 cargo test -p tideover-zk --features prover --release
 ```
 
 ```bash
-cargo test -p tideover-fund --release
+cargo test -p tideover-fund -p tideover-factory -p tideover-clerk --release
 ```
 
 ```bash
 cargo build -p tideover-fund -p tideover-factory -p tideover-test-usd --target wasm32-unknown-unknown --release
+```
+
+```bash
+cargo build -p tideover-clerk --target wasm32-wasip2 --release
 ```
 
 ```bash
@@ -115,11 +124,10 @@ Then open <http://localhost:3100>. To deploy your own copy, see [docs/DEPLOY.md]
 
 ## Built with
 
-near-sdk, near-api-js, arkworks, Next.js, `@noble` cryptography, wasm-bindgen, curve25519-dalek, chacha20poly1305, pdf.js.
+near-sdk, near-api-js, arkworks, OutLayer, NEAR AI Cloud, Next.js, `@noble` cryptography, wasm-bindgen, curve25519-dalek, ed25519-dalek, chacha20poly1305, pdf.js.
 
 - The Poseidon parameters, tree, NEP-488 encodings and Groth16 verifier follow [Antumbra](https://github.com/Valentine1898/antumbra) (MIT), and `contracts/fund/src/groth16.rs` is adapted from it.
 - The role pattern for acting inside a DAO follows [Petty Cash](https://github.com/kasbsquall/petty-cash) (MIT).
-- The on-chain check of an encrypted model response follows the design published by [Undo](https://github.com/agadape/undo). That code has no licence, so `review.rs` was written from its description and from NEAR AI's documentation.
 
 All code here was written during the hackathon window, with AI assistance (Claude Code).
 

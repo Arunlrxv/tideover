@@ -13,8 +13,6 @@ crate-type = ["cdylib", "rlib"]
 near-sdk.workspace = true
 tideover-zk = { path = "../../crates/tideover-zk", default-features = false }
 hex.workspace = true
-chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
-curve25519-dalek = { version = "4", default-features = false }
 
 [dev-dependencies]
 near-sdk = { workspace = true, features = ["unit-testing"] }

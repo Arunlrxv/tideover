@@ -23,6 +23,9 @@ pub struct Rules {
     /// Cycles a member's anonymous tag lasts. `Tier::year_cap` applies across this
     /// window, and claims in it can be linked to each other but not to the member.
     pub window_cycles: u32,
+    /// The smallest group a claim may hide in. A proof for a period and tier is
+    /// refused until this many members paid that period at that tier or above.
+    pub min_group: u32,
     pub tiers: Vec<Tier>,
     /// At or below this, a well-supported claim pays after the veto window.
     pub auto_limit: U128,
@@ -35,6 +38,9 @@ pub struct Rules {
     pub review_window_secs: u64,
     pub veto_window_secs: u64,
     pub panel_window_secs: u64,
+    /// How long a council proposal may sit before the fund finalises it. Set this
+    /// to at least the DAO's `proposal_period`.
+    pub council_window_secs: u64,
     /// Must match the DAO's own `proposal_bond`.
     pub proposal_bond: U128,
     pub token_decimals: u8,
@@ -71,9 +77,15 @@ pub enum ClaimStatus {
     VetoWindow,
     PanelVoting,
     NeedsCouncil,
+    /// A proposal for the council is being filed.
+    Filing,
     CouncilVote,
     Approved,
+    /// A proposal is being filed and approved.
     Paying,
+    /// The DAO approved it. The transfer runs separately and can still fail, so
+    /// the claim waits here until the DAO's record is final.
+    Settling,
     Paid,
     Rejected,
 }
@@ -117,8 +129,7 @@ pub struct Claim {
     pub nullifier: String,
     pub period: u64,
     pub proof: String,
-    pub signed_text: Option<String>,
-    pub signature: Option<String>,
+    pub card_signature: Option<String>,
 }
 
 #[near(serializers = [json, borsh])]
@@ -148,6 +159,9 @@ pub struct Member {
     pub service_points: u32,
     pub last_paid_period: Option<u64>,
     pub leaf: Option<Leaf>,
+    /// Last period's leaf. Proving this one hides a member among everyone who paid
+    /// that period, a finished group, rather than whoever has paid so far this period.
+    pub prev_leaf: Option<Leaf>,
     pub active: bool,
 }
 
@@ -161,6 +175,7 @@ pub struct MemberView {
     pub service_points: u32,
     pub last_paid_period: Option<u64>,
     pub leaf: Option<Leaf>,
+    pub prev_leaf: Option<Leaf>,
     pub active: bool,
     pub score: u32,
     pub tier: u8,
@@ -171,20 +186,22 @@ pub struct MemberView {
 #[near(serializers = [borsh])]
 #[derive(Clone, Debug)]
 pub struct Reviewer {
-    pub model_id: String,
+    /// The clerk's ed25519 key, which signs cards.
     pub signer: [u8; 32],
-    pub signer_x25519: [u8; 32],
+    /// The clerk's X25519 key, which documents are encrypted to.
+    pub encryption_key: [u8; 32],
+    /// The build the DAO checked. Recorded for anyone auditing the attestation.
+    pub code_hash: String,
     pub prompt_sha256: [u8; 32],
-    pub max_tokens: u32,
 }
 
 #[near(serializers = [json])]
 #[derive(Clone, Debug)]
 pub struct ReviewerView {
-    pub model_id: String,
     pub signer: String,
+    pub encryption_key: String,
+    pub code_hash: String,
     pub prompt_sha256: String,
-    pub max_tokens: u32,
 }
 
 #[near(serializers = [json])]

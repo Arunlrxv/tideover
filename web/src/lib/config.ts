@@ -3,7 +3,8 @@ import type { Deployment } from "./types";
 
 export const D = deployment as Deployment;
 
-export const RPCS = ["https://rpc.testnet.fastnear.com", "https://test.rpc.fastnear.com", "https://near-testnet.drpc.org"];
+// The last one refuses browsers (no CORS), so it only ever helps the server.
+export const RPCS = ["https://rpc.testnet.fastnear.com", "https://near-testnet.drpc.org", "https://test.rpc.fastnear.com"];
 
 export const EXPLORER = "https://testnet.nearblocks.io";
 export const txUrl = (hash: string) => `${EXPLORER}/txns/${hash}`;

@@ -14,7 +14,7 @@ type Item = { claim: Claim; proposal: Proposal | null };
 export default function CouncilPage() {
   const { data } = useLive(async () => {
     const all = await listClaims(30);
-    const open = all.filter((c) => c.status === "CouncilVote" || c.status === "NeedsCouncil");
+    const open = all.filter((c) => c.status === "CouncilVote" || c.status === "NeedsCouncil" || c.status === "Filing");
     return Promise.all(open.map(async (claim): Promise<Item> => ({ claim, proposal: claim.proposal_id != null ? await getProposal(D.dao, claim.proposal_id).catch(() => null) : null })));
   }, 5000);
 

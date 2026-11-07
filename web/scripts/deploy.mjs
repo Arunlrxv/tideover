@@ -1,14 +1,17 @@
 // Deploys the Harbor demo community on NEAR testnet, one idempotent step at a time.
 //
-//   node scripts/deploy.mjs            run every step that has not run yet
-//   node scripts/deploy.mjs reviewer   re-pin the attested model key through a DAO vote
+//   node scripts/deploy.mjs                    run every step that has not run yet
+//   node scripts/deploy.mjs enclave <url> <sha256>
+//       run an uploaded clerk build, read its keys, and pin it through a DAO vote
 //
 // A real install is steps "fund" and "role": two ordinary proposals on an existing
 // DAO. Everything else here only builds a demo community to install it on.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { KeyPair } from "near-api-js";
-import { MAX_TOKENS, MODEL, PROMPT, sha256hex } from "../src/lib/sealed.mjs";
+import { Account, KeyPair } from "near-api-js";
+import { bytesToHex, randomBytes } from "@noble/hashes/utils.js";
+import { clerkKeys } from "../src/lib/clerk.mjs";
+import { PROMPT, sha256hex } from "../src/lib/sealed.mjs";
 import init, { commitment, new_secret } from "../public/zk/tideover_wasm.js";
 import {
   DEPLOYMENT,
@@ -28,12 +31,14 @@ import {
   wasm,
   writeJson,
 } from "./lib.mjs";
-import { Account } from "near-api-js";
 
 const MASTER = process.env.TIDEOVER_MASTER ?? "tideover-hq.testnet";
 const DAO_FACTORY = "sputnikv2.testnet";
 const DAO_NAME = process.env.TIDEOVER_DAO_NAME ?? "harbor-mutual";
 const FUND_LABEL = "harbor";
+const OUTLAYER = "outlayer.testnet";
+/** Recorded on chain instead of a build hash, so a server clerk can't pass for an enclave. */
+const SERVER_CLERK = "server-demo";
 
 const sub = (label) => `${label}.${MASTER}`;
 const TOKEN = sub("usd");
@@ -43,10 +48,11 @@ const JOINER = sub("m");
 const DAO = `${DAO_NAME}.${DAO_FACTORY}`;
 const FUND = `${FUND_LABEL}.${FACTORY}`;
 const COUNCIL = ["maya", "tomas", "ines"].map(sub);
+// Twelve points reach the top tier, and these three make that group big enough to claim from.
 const MEMBERS = [
   ["amara", 13],
   ["ben", 12],
-  ["chi", 8],
+  ["chi", 12],
   ["dara", 7],
   ["eli", 6],
   ["farah", 5],
@@ -59,6 +65,7 @@ const RULES = {
   period_secs: 30 * 24 * 3600,
   periods_per_cycle: 3,
   window_cycles: 4,
+  min_group: 3,
   tiers: [
     { min_score: 0, cap: "0", year_cap: "0" },
     { min_score: 3, cap: String(100n * USD), year_cap: String(200n * USD) },
@@ -73,6 +80,8 @@ const RULES = {
   review_window_secs: 150,
   veto_window_secs: 45,
   panel_window_secs: 1800,
+  // Sputnik's default voting period is seven days. This is a day past it.
+  council_window_secs: 8 * 24 * 3600,
   proposal_bond: String(near("0.1")),
   token_decimals: 6,
 };
@@ -86,7 +95,6 @@ function keyOf(id) {
   save();
   return S.keys[id];
 }
-const pub = (key) => KeyPair.fromString(key).getPublicKey().toString();
 const acct = (id) => new Account(id, provider, keyOf(id));
 
 async function exists(id) {
@@ -156,23 +164,47 @@ const functionCallKind = (receiver_id, method_name, args, deposit, gas) => ({
   },
 });
 
-async function attestedKey() {
-  const res = await fetch(`https://cloud-api.near.ai/v1/attestation/report?model=${encodeURIComponent(MODEL)}&signing_algo=ed25519`);
-  if (!res.ok) throw new Error(`attestation report: HTTP ${res.status}`);
-  const report = await res.json();
-  const a = report.model_attestations?.find((m) => m.signing_public_key || m.signing_address);
-  if (!a) throw new Error("no model attestation in the report");
-  return (a.signing_public_key ?? a.signing_address).replace(/^0x/, "");
+async function pinClerk({ signer, encryption_key }, codeHash, label) {
+  const args = { signer, encryption_key, code_hash: codeHash, prompt_sha256: sha256hex(PROMPT) };
+  await propose(`Pin the sealed clerk: ${label}, key ${signer.slice(0, 12)}…`, functionCallKind(FUND, "set_reviewer", args, 0, teraToGas(50)));
+  log("  pinned", signer);
 }
 
-async function pinReviewer() {
-  const signer = await attestedKey();
-  const args = { model_id: MODEL, signer, prompt_sha256: sha256hex(PROMPT), max_tokens: MAX_TOKENS };
-  await propose(
-    `Pin the sealed reader: ${MODEL}, enclave key ${signer.slice(0, 12)}…`,
-    functionCallKind(FUND, "set_reviewer", args, 0, teraToGas(50)),
+/**
+ * Runs the uploaded build once, in OutLayer's enclave, to read the public keys it made.
+ * The transaction's attestation is the record of which build printed them.
+ */
+async function enclaveKeys(url, hash) {
+  const limits = { max_instructions: 2_000_000_000, max_memory_mb: 128, max_execution_seconds: 30 };
+  const input_data = JSON.stringify({ action: "keys" });
+  const relay = acct(RELAY);
+  const deposit = await view(OUTLAYER, "estimate_execution_cost", { resource_limits: limits, input_len: input_data.length });
+  const o = await call(
+    relay,
+    OUTLAYER,
+    "request_execution",
+    {
+      source: { WasmUrl: { url, hash, build_target: "wasm32-wasip2" } },
+      resource_limits: limits,
+      input_data,
+      secrets_ref: { profile: "clerk", account_id: RELAY },
+      response_format: "Json",
+      payer_account_id: RELAY,
+    },
+    { deposit: BigInt(deposit), tgas: 300 },
   );
-  log("  pinned", signer);
+  if (o.value?.error) throw new Error(`the clerk refused: ${o.value.error}`);
+  if (o.value?.prompt_sha256 !== sha256hex(PROMPT)) throw new Error("that build carries a different prompt from this repo");
+  return { keys: o.value, tx: o.hash };
+}
+
+async function pinEnclave(url, hash) {
+  if (!url || !/^[0-9a-f]{64}$/.test(hash ?? "")) throw new Error("usage: deploy.mjs enclave <wasm url> <lowercase sha256>");
+  const { keys, tx } = await enclaveKeys(url, hash);
+  log("  the enclave's keys:", keys.signer, keys.encryption_key, `(${tx})`);
+  await pinClerk(keys, hash, `enclave build ${hash.slice(0, 12)}…`);
+  S.clerk = { url, hash, keysTx: tx };
+  save();
 }
 
 /** Keeps a key someone already put in web/.env.local. */
@@ -194,6 +226,7 @@ function writeOutputs() {
     council: COUNCIL,
     guardians: [COUNCIL[0]],
     seededMembers: MEMBERS.map(([n]) => sub(n)),
+    clerk: S.clerk ? { keysTx: S.clerk.keysTx, wasmUrl: S.clerk.url } : {},
     transactions: S.txs,
   });
   const env = [
@@ -202,22 +235,28 @@ function writeOutputs() {
     `TIDEOVER_JOINER_ACCOUNT=${JOINER}`,
     `TIDEOVER_JOINER_KEY=${keyOf(JOINER)}`,
     `TIDEOVER_DEMO_KEY=${S.demoKey}`,
+    `TIDEOVER_CLERK_WASM_URL=${S.clerk?.url ?? ""}`,
+    `TIDEOVER_CLERK_WASM_HASH=${S.clerk?.hash ?? ""}`,
+    // The enclave never uses this seed, so an enclave fund's server does not hold it.
+    `TIDEOVER_CLERK_SEED=${S.clerk ? "" : S.clerkSeed}`,
     `NEAR_AI_API_KEY=${process.env.NEAR_AI_API_KEY ?? existingAiKey()}`,
     "",
   ].join("\n");
   writeJson(join(ROOT, ".testnet", "public.json"), { fund: FUND, dao: DAO, token: TOKEN });
-  return env;
+  writeFileSync(join(ROOT, "web", ".env.local"), env);
 }
 
 async function main() {
   const wasmBytes = readFileSync(join(ROOT, "web", "public", "zk", "tideover_wasm_bg.wasm"));
   await init({ module_or_path: wasmBytes });
   S.demoKey ??= KeyPair.fromRandom("ed25519").toString();
+  S.clerkSeed ??= bytesToHex(randomBytes(32));
   save();
   const demoPub = KeyPair.fromString(S.demoKey).getPublicKey();
 
-  if (process.argv[2] === "reviewer") {
-    await pinReviewer();
+  if (process.argv[2] === "enclave") {
+    await pinEnclave(process.argv[3], process.argv[4]);
+    writeOutputs();
     return;
   }
 
@@ -286,7 +325,7 @@ async function main() {
         role: {
           name: "tideover",
           kind: { Group: [FUND] },
-          permissions: ["transfer:AddProposal", "transfer:VoteApprove"],
+          permissions: ["transfer:AddProposal", "transfer:VoteApprove", "transfer:Finalize"],
           vote_policy: { transfer: { weight_kind: "RoleWeight", quorum: "0", threshold: [1, 1] } },
         },
       },
@@ -295,7 +334,9 @@ async function main() {
 
   // ---- The rest gives the demo community some history. ----
 
-  await step("reviewer", pinReviewer);
+  await step("clerk", async () => {
+    await pinClerk(clerkKeys(S.clerkSeed), SERVER_CLERK, "the demo server's clerk, until an enclave build is pinned");
+  });
 
   await step("bonds", async () => {
     // Pays for proposal bonds, token registration and claim records through judging.
@@ -339,10 +380,7 @@ async function main() {
     }
   });
 
-  const env = writeOutputs();
-  writeJson(join(ROOT, ".testnet", "env.json"), { env });
-  const { writeFileSync } = await import("node:fs");
-  writeFileSync(join(ROOT, "web", ".env.local"), env);
+  writeOutputs();
   const fund = await view(FUND, "get_fund");
   log("deployed:", FUND, `members ${fund.members}, paid up ${fund.paid_up}, leaves ${fund.leaves}`);
 }

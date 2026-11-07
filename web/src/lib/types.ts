@@ -7,6 +7,7 @@ export type Rules = {
   period_secs: number;
   periods_per_cycle: number;
   window_cycles: number;
+  min_group: number;
   tiers: Tier[];
   auto_limit: string;
   panel_limit: string;
@@ -16,6 +17,7 @@ export type Rules = {
   review_window_secs: number;
   veto_window_secs: number;
   panel_window_secs: number;
+  council_window_secs: number;
   proposal_bond: string;
   token_decimals: number;
 };
@@ -36,9 +38,11 @@ export type ClaimStatus =
   | "VetoWindow"
   | "PanelVoting"
   | "NeedsCouncil"
+  | "Filing"
   | "CouncilVote"
   | "Approved"
   | "Paying"
+  | "Settling"
   | "Paid"
   | "Rejected";
 
@@ -67,8 +71,7 @@ export type Claim = {
   nullifier: string;
   period: number;
   proof: string;
-  signed_text: string | null;
-  signature: string | null;
+  card_signature: string | null;
 };
 
 export type Leaf = { position: number; period: number; tier: number };
@@ -81,6 +84,7 @@ export type MemberView = {
   service_points: number;
   last_paid_period: number | null;
   leaf: Leaf | null;
+  prev_leaf: Leaf | null;
   active: boolean;
   score: number;
   tier: number;
@@ -109,7 +113,7 @@ export type FundView = {
   paid_out: string;
   unforwarded: string;
   spare_near: string;
-  reviewer: { model_id: string; signer: string; prompt_sha256: string; max_tokens: number } | null;
+  reviewer: { signer: string; encryption_key: string; code_hash: string; prompt_sha256: string } | null;
 };
 
 export type Deployment = {
@@ -123,5 +127,6 @@ export type Deployment = {
   council: string[];
   guardians: string[];
   seededMembers: string[];
+  clerk?: { keysTx?: string; wasmUrl?: string };
   transactions: Record<string, string>;
 };

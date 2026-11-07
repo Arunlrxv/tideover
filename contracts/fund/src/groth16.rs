@@ -25,7 +25,7 @@ pub fn verify(vk: &[u8], proof: &[u8], inputs: &[[u8; SCALAR]]) -> Option<bool> 
         return None;
     }
     let ic = &vk[G1 + 3 * G2..];
-    if ic.len() % G1 != 0 || ic.len() / G1 != inputs.len() + 1 {
+    if !ic.len().is_multiple_of(G1) || ic.len() / G1 != inputs.len() + 1 {
         return None;
     }
     let (alpha, beta) = (&vk[0..G1], &vk[G1..G1 + G2]);

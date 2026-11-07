@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     readOutcome(created as never);
 
     const relay = relayAccount();
-    await send(relay, D.fund, "admit", { account, prior_periods: 7, commitment });
+    await send(relay, D.fund, "admit", { account, prior_periods: 12, commitment });
     await send(relay, D.token, "mint", { account_id: account, amount: "100000000" });
     return NextResponse.json({ account });
   });

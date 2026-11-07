@@ -11,10 +11,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32-unknown-unknown
+          targets: wasm32-unknown-unknown,wasm32-wasip2
       - run: cargo test -p tideover-zk --features prover --release
-      - run: cargo test -p tideover-fund -p tideover-anon-poll --release
+      - run: cargo test -p tideover-fund -p tideover-factory -p tideover-anon-poll -p tideover-clerk --release
       - run: cargo build -p tideover-fund -p tideover-factory -p tideover-test-usd --target wasm32-unknown-unknown --release
+      - run: cargo build -p tideover-clerk --target wasm32-wasip2 --release
 
   web:
     runs-on: ubuntu-latest

@@ -4,10 +4,10 @@
 // neither is ever sent anywhere. Clearing this browser's data loses both, which
 // is fine for a demo. A real member would derive them from their wallet.
 import { Account, FailoverRpcProvider, JsonRpcProvider, KeyPair, actions, encodeSignedDelegate, teraToGas } from "near-api-js";
-import { allLeaves, getCaseFile, getClaim, getFund, getMember } from "./chain";
+import { allLeaves, getClaim, getFund, getMember, groupSize } from "./chain";
 import { D, RPCS } from "./config";
-import { buildRequest, encryptTo, newClient, openWith, sha256hex, systemMessage } from "./sealed.mjs";
-import type { Claim, Card, FundView, MemberView } from "./types";
+import { sealTo, sealedPayload, sha256hex } from "./sealed.mjs";
+import type { Claim, Card, FundView, Leaf, MemberView } from "./types";
 import { commitmentOf, newSecret, proveClaim, type ClaimProof } from "./zk";
 
 const provider = new FailoverRpcProvider(RPCS.map((url) => new JsonRpcProvider({ url }, { retries: 1, wait: 300, backoff: 2 })));
@@ -96,41 +96,65 @@ export function freshPayout() {
 export type Prepared = {
   fund: FundView;
   member: MemberView;
-  evidenceEnvelope: string;
+  envelope: string;
   evidenceSha256: string;
   proof: ClaimProof;
   amount: string;
   payout: string;
 };
 
-/** Everything that happens on this device before anything is sent. */
-export async function prepareClaim(m: LocalMember, amount: string, payout: string, document: string, minTier?: number): Promise<Prepared> {
-  const [fund, member] = await Promise.all([getFund(), getMember(m.account)]);
-  if (!fund.reviewer) throw new Error("This fund has not pinned a reader yet");
-  if (!member?.leaf) throw new Error("Pay this period's dues first");
-  const evidence = encryptTo(fund.reviewer.signer, document);
-  const evidenceSha256 = sha256hex(evidence.envelope);
-  const leaves = await allLeaves(fund.leaves);
-  const proof = await proveClaim({
-    secret: m.secret,
-    fund: D.fund,
-    window: fund.window,
-    tier: member.leaf.tier,
-    period: member.leaf.period,
-    min_tier: minTier ?? lowestTierFor(fund, amount, member.leaf.tier),
-    amount,
-    payout,
-    evidence_sha256: evidenceSha256,
-    position: member.leaf.position,
-    leaves,
-  });
-  return { fund, member, evidenceEnvelope: evidence.envelope, evidenceSha256, proof, amount, payout };
-}
-
 /** Proving the lowest tier that covers the amount hides the member among more people. */
 function lowestTierFor(fund: FundView, amount: string, mine: number) {
   const i = fund.rules.tiers.findIndex((t) => BigInt(t.cap) >= BigInt(amount));
   return i === -1 ? mine : Math.min(i, mine);
+}
+
+/**
+ * Chooses which paid month to prove. Last month's group is finished, so it is usually
+ * bigger than whoever has paid so far this month, and the claim hides in a bigger
+ * crowd. On a tie, the first entry wins, and that is last month.
+ */
+async function bestGroup(fund: FundView, member: MemberView, requestedTier: number | undefined, amount: string) {
+  const usable = [member.prev_leaf, member.leaf].filter((l): l is Leaf => l !== null && l.period + 1 >= fund.period);
+  if (!usable.length) throw new Error("Pay this month's dues first");
+  const mine = Math.max(...usable.map((l) => l.tier));
+  const minTier = requestedTier ?? lowestTierFor(fund, amount, mine);
+  const sized = await Promise.all(
+    usable.filter((l) => l.tier >= minTier).map(async (leaf) => ({ leaf, size: await groupSize(leaf.period, minTier) })),
+  );
+  const best = sized.reduce((a, b) => (b.size > a.size ? b : a));
+  if (best.size < fund.rules.min_group) {
+    throw new Error(
+      `Only ${best.size} members could have made this claim, and this fund needs ${fund.rules.min_group} before it will hide one. A smaller amount hides you among more people.`,
+    );
+  }
+  return { leaf: best.leaf, minTier };
+}
+
+/** Everything that happens on this device before anything is sent. */
+export async function prepareClaim(m: LocalMember, amount: string, payout: string, document: string, requestedTier?: number): Promise<Prepared> {
+  const [fund, member] = await Promise.all([getFund(), getMember(m.account)]);
+  if (!fund.reviewer) throw new Error("This fund has not pinned a clerk yet");
+  if (!member) throw new Error("Join the fund first");
+  const { leaf, minTier } = await bestGroup(fund, member, requestedTier, amount);
+  const envelope = sealTo(fund.reviewer.encryption_key, sealedPayload({ fund: D.fund, amount, payout, document }));
+  const evidenceSha256 = sha256hex(envelope);
+  const leaves = await allLeaves(fund.leaves);
+  const proof = await proveClaim({
+    secret: m.secret,
+    fund: D.fund,
+    cycle: fund.cycle,
+    window: fund.window,
+    tier: leaf.tier,
+    period: leaf.period,
+    min_tier: minTier,
+    amount,
+    payout,
+    evidence_sha256: evidenceSha256,
+    position: leaf.position,
+    leaves,
+  });
+  return { fund, member, envelope, evidenceSha256, proof, amount, payout };
 }
 
 export const fileClaim = (p: Prepared) =>
@@ -146,33 +170,12 @@ export const fileClaim = (p: Prepared) =>
   });
 
 /**
- * Sends the sealed request and posts the verdict. The response is encrypted to a
- * key made here, so the relay carries it without being able to read it. Only the
- * key for the `content` field is revealed; the reasoning stays sealed.
+ * Hands the sealed document to the clerk and posts the card it signs. The relay
+ * carries a ciphertext it can't open, and it can't change the card.
  */
-export async function runSealedReview(claimId: string, fund: FundView, evidenceEnvelope: string): Promise<Card> {
-  const reader = fund.reviewer!;
-  const caseFile = await getCaseFile(claimId);
-  const sys = encryptTo(reader.signer, systemMessage(caseFile));
-  const request = buildRequest({ model: reader.model_id, systemEnvelope: sys.envelope, evidenceEnvelope, maxTokens: reader.max_tokens });
-  const client = newClient();
-  const review = await post<{ responseBody: string; signedText: string; signature: string }>("/api/review", {
-    claimId,
-    request,
-    clientPub: client.pubHex,
-  });
-  const content = JSON.parse(review.responseBody).choices[0].message.content;
-  const opened = openWith(client.x25519Secret, content);
-  const { card } = await post<{ card: Card }>("/api/review/post", {
-    claim_id: claimId,
-    signed_text: review.signedText,
-    signature: review.signature,
-    system_envelope: sys.envelope,
-    system_eph_secret: sys.ephSecretHex,
-    evidence_envelope: evidenceEnvelope,
-    response_body: review.responseBody,
-    verdict_key: opened.keyHex,
-  });
+export async function runSealedReview(claimId: string, envelope: string): Promise<Card> {
+  const { card, signature } = await post<{ card: Card; signature: string }>("/api/review", { claimId, envelope });
+  await post("/api/review/post", { claim_id: claimId, card, signature });
   return card;
 }
 

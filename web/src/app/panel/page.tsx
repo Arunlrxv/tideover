@@ -75,7 +75,10 @@ function Case({ claim }: { claim: Claim }) {
           ))}
         </dl>
       ) : (
-        <p className="muted">The reader did not answer, so all you have is the amount and the member&apos;s proof.</p>
+        <p className="muted">
+          No card arrived. The reader may have been down, or the relay may have held it back, so this says nothing either way about
+          the claim. All you have is the amount and the member&apos;s proof.
+        </p>
       )}
       {claim.card?.injection && <div className="notice warn">The document tried to instruct the reader.</div>}
       {claim.prior_claims > 0 && (

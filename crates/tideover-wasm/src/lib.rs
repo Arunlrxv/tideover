@@ -54,19 +54,27 @@ pub fn commitment(secret: &str) -> Result<String, JsError> {
 /// so tools can rebuild the tree offline.
 #[wasm_bindgen]
 pub fn leaf(commitment: &str, period: u64, tier: u8) -> Result<String, JsError> {
-    Ok(fr_to_hex(&identity::leaf(field(commitment, "commitment")?, period, tier)))
+    Ok(fr_to_hex(&identity::leaf(
+        field(commitment, "commitment")?,
+        period,
+        tier,
+    )))
 }
 
 #[wasm_bindgen]
 pub fn nullifier(secret: &str, fund: &str, window: u64) -> Result<String, JsError> {
     let scope = identity::scope(fund, window);
-    Ok(fr_to_hex(&identity::nullifier(field(secret, "secret")?, scope)))
+    Ok(fr_to_hex(&identity::nullifier(
+        field(secret, "secret")?,
+        scope,
+    )))
 }
 
 #[derive(Deserialize)]
 struct ClaimRequest {
     secret: String,
     fund: String,
+    cycle: u64,
     window: u64,
     tier: u8,
     period: u64,
@@ -110,7 +118,7 @@ pub fn prove_claim(pk: &[u8], request: &str, seed: &[u8]) -> Result<String, JsEr
         .try_into()
         .map_err(|_| err("evidence hash must be 32 bytes"))?;
     let scope = identity::scope(&r.fund, r.window);
-    let signal = identity::signal(&r.fund, amount, &r.payout, &evidence);
+    let signal = identity::signal(&r.fund, r.cycle, amount, &r.payout, &evidence);
     let circuit = MembershipCircuit::from_leaves(
         secret, r.tier, r.period, r.min_tier, scope, signal, &leaves, r.position,
     );
@@ -135,6 +143,7 @@ struct AuditRequest {
     min_tier: u8,
     nullifier: String,
     fund: String,
+    cycle: u64,
     window: u64,
     amount: String,
     payout: String,
@@ -158,7 +167,7 @@ pub fn audit_claim(vk: &[u8], request: &str) -> Result<bool, JsError> {
         min_tier: r.min_tier,
         scope: identity::scope(&r.fund, r.window),
         nullifier: field(&r.nullifier, "nullifier")?,
-        signal: identity::signal(&r.fund, amount, &r.payout, &evidence),
+        signal: identity::signal(&r.fund, r.cycle, amount, &r.payout, &evidence),
     };
     let proof = near_encoding::proof_from_bytes(&hex::decode(&r.proof).map_err(err)?)
         .ok_or_else(|| err("malformed proof"))?;

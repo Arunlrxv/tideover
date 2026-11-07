@@ -2,21 +2,29 @@
 // Every proof is generated here with the same wasm the browser uses.
 //
 //   node scripts/e2e.mjs            all scenarios
-//   node scripts/e2e.mjs attacks    only the refusals
+//   node scripts/e2e.mjs auto       one scenario: auto, panel, council or attacks
+//
+// With NEAR_AI_API_KEY set, the real model reads each document. Without it, the demo
+// clerk's key signs a fixed card, which proves everything on chain but not the model,
+// and the report says so.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { KeyPair, Account } from "near-api-js";
-import { MODEL, MAX_TOKENS, buildRequest, encryptTo, newClient, openWith, sha256hex, systemMessage } from "../src/lib/sealed.mjs";
+import { MODEL_URL, clerkKeys, review, signCard } from "../src/lib/clerk.mjs";
+import { cardMessage, sealTo, sealedPayload, sha256hex } from "../src/lib/sealed.mjs";
 import init, { prove_claim } from "../public/zk/tideover_wasm.js";
 import { DEPLOYMENT, ROOT, SECRETS, USD, actions, call, log, outcome, provider, readJson, teraToGas, view, writeJson } from "./lib.mjs";
 
 const D = readJson(DEPLOYMENT);
 const S = readJson(SECRETS);
 const FUND = D.fund;
+const SETTLE_SECS = 20;
 const acct = (id) => new Account(id, provider, S.keys[id]);
 const relayId = `relay.${D.fund.split(".").slice(2).join(".")}`;
 const relay = acct(relayId);
 const pk = readFileSync(join(ROOT, "keys", "membership.pk"));
+const clerk = clerkKeys(S.clerkSeed);
+const apiKey = process.env.NEAR_AI_API_KEY;
 const results = [];
 
 const pass = (name, detail = "") => {
@@ -47,27 +55,32 @@ async function leaves() {
   return { fund: f, leaves: out };
 }
 
+function freshImplicit() {
+  const k = KeyPair.fromRandom("ed25519");
+  return Buffer.from(k.getPublicKey().data).toString("hex");
+}
+
 /** Everything a member's browser does before the relay sees anything. */
-async function prepare(memberId, dollars, evidenceText, { payout, minTier } = {}) {
+async function prepare(memberId, dollars, document, { minTier } = {}) {
   const { fund, leaves: all } = await leaves();
   const m = await view(FUND, "get_member", { account: memberId });
   const amount = String(BigInt(dollars) * USD);
-  const modelKey = fund.reviewer.signer;
-  const evidence = encryptTo(modelKey, evidenceText);
-  const evidence_sha256 = sha256hex(evidence.envelope);
-  const payoutId = payout ?? freshImplicit();
-  const proofJson = JSON.parse(
+  const payout = freshImplicit();
+  const envelope = sealTo(fund.reviewer.encryption_key, sealedPayload({ fund: FUND, amount, payout, document }));
+  const evidence_sha256 = sha256hex(envelope);
+  const { millis: _millis, ...proof } = JSON.parse(
     prove_claim(
       pk,
       JSON.stringify({
         secret: S.secrets[memberId],
         fund: FUND,
+        cycle: fund.cycle,
         window: fund.window,
         tier: m.leaf.tier,
         period: m.leaf.period,
         min_tier: minTier ?? m.leaf.tier,
         amount,
-        payout: payoutId,
+        payout,
         evidence_sha256,
         position: m.leaf.position,
         leaves: all,
@@ -75,12 +88,7 @@ async function prepare(memberId, dollars, evidenceText, { payout, minTier } = {}
       crypto.getRandomValues(new Uint8Array(32)),
     ),
   );
-  return { args: { ...proofJson, amount, payout: payoutId, evidence_sha256 }, evidence, fund };
-}
-
-function freshImplicit() {
-  const k = KeyPair.fromRandom("ed25519");
-  return Buffer.from(k.getPublicKey().data).toString("hex");
+  return { args: { ...proof, amount, payout, evidence_sha256 }, envelope, fund };
 }
 
 async function fileClaim(args) {
@@ -97,68 +105,81 @@ async function waitForStatus(id, status, seconds) {
     if (c.status === status) return c;
     await sleep(3);
   }
-  throw new Error(`claim ${id} did not reach ${status}`);
+  throw new Error(`claim ${id} did not reach ${status}, it is ${(await claim(id)).status}`);
 }
 
-/** Runs the sealed reader for real, if a NEAR AI key is present. */
-async function runReview(id, evidence, fund) {
-  const apiKey = process.env.NEAR_AI_API_KEY;
-  if (!apiKey) return null;
-  const caseFile = await view(FUND, "get_case_file", { claim_id: id });
-  const sys = encryptTo(fund.reviewer.signer, systemMessage(caseFile));
-  const request = buildRequest({ model: fund.reviewer.model_id, systemEnvelope: sys.envelope, evidenceEnvelope: evidence.envelope, maxTokens: fund.reviewer.max_tokens });
-  const client = newClient();
-  const res = await fetch("https://cloud-api.near.ai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "Accept-Encoding": "identity",
-      "x-signing-algo": "ed25519",
-      "x-client-pub-key": client.pubHex,
-      "x-model-pub-key": fund.reviewer.signer,
-      "x-encryption-version": "2",
-      "x-no-aliasing": "true",
-      "x-encrypt-all-fields": "true",
-    },
-    body: Buffer.from(request, "utf8"),
-  });
-  const responseBody = Buffer.from(await res.arrayBuffer()).toString("utf8");
-  if (res.status !== 200) throw new Error(`NEAR AI HTTP ${res.status}: ${responseBody.slice(0, 300)}`);
-  const parsed = JSON.parse(responseBody);
-  const opened = openWith(client.x25519Secret, parsed.choices[0].message.content);
-  log("  the reader answered:", opened.plaintext);
-  let sig;
-  for (let i = 0; i < 10 && !sig; i++) {
-    const r = await fetch(`https://cloud-api.near.ai/v1/signature/${parsed.id}?model=${encodeURIComponent(fund.reviewer.model_id)}&signing_algo=ed25519`, { headers: { Authorization: `Bearer ${apiKey}` } });
-    if (r.ok) sig = await r.json();
-    else await sleep(2);
+const TEST_CARD = { category: "medical", document: "bill", recent: true, amount_matches: "yes", injection: false, assessment: "supported" };
+
+/** The clerk's card for a claim: from the real model if there is a key, otherwise a fixed one. */
+async function clerkCard(id, envelope) {
+  if (apiKey) {
+    return review(
+      { fund: FUND, claim: id, envelope },
+      {
+        keys: clerk,
+        view: (method, args) => view(FUND, method, args),
+        askModel: async (body) => {
+          const res = await fetch(MODEL_URL, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body });
+          if (!res.ok) throw new Error(`NEAR AI HTTP ${res.status}`);
+          return res.text();
+        },
+      },
+    );
   }
-  if (!sig) throw new Error("no signature from NEAR AI");
-  const o = await call(
-    relay,
-    FUND,
-    "post_review",
-    {
-      claim_id: id,
-      signed_text: sig.text,
-      signature: sig.signature.replace(/^0x/, ""),
-      system_envelope: sys.envelope,
-      system_eph_secret: sys.ephSecretHex,
-      evidence_envelope: evidence.envelope,
-      response_body: responseBody,
-      verdict_key: opened.keyHex,
-    },
-    { tgas: 200 },
-  );
-  pass("the sealed reader's verdict passes every on-chain check", `${o.tgas} Tgas, ${o.hash}`);
-  return o.value;
+  const c = await claim(id);
+  const message = cardMessage({ fund: FUND, claim: id, nonce: c.nonce, evidenceSha256: c.evidence_sha256, amount: c.amount, payout: c.payout, card: TEST_CARD });
+  return { card: TEST_CARD, signature: signCard(clerk, message) };
+}
+
+async function postCard(id, envelope) {
+  const { card, signature } = await clerkCard(id, envelope);
+  const o = await call(relay, FUND, "post_card", { claim_id: id, card, signature }, { tgas: 100 });
+  pass(apiKey ? "the model's card passes the contract's checks" : "a signed card passes the contract's checks (fixed test card, no model)", `${o.tgas} Tgas, ${o.hash}`);
+  return card;
+}
+
+/** The DAO reports Approved before its transfer runs, so the fund looks twice. */
+async function settle(id) {
+  await waitForStatus(id, "Settling", 30);
+  await sleep(SETTLE_SECS + 2);
+  await call(relay, FUND, "advance", { claim_id: id }, { tgas: 100 });
+  return waitForStatus(id, "Paid", 30);
+}
+
+async function expectPaid(name, c, args, dollars, before) {
+  const got = await balance(args.payout);
+  const after = await balance(D.dao);
+  if (got === BigInt(dollars) * USD && before - after === BigInt(dollars) * USD) pass(name, `proposal #${c.proposal_id}, $${dollars}`);
+  else fail(name, `payout ${got}, DAO change ${before - after}`);
+}
+
+async function scenarioAutoClaim() {
+  const member = D.seededMembers[3];
+  const { args, envelope } = await prepare(member, 85, "St Brigid's Community Hospital. Follow-up clinic visit. Amount due $85.00.", { minTier: 1 });
+  const before = await balance(D.dao);
+  const filed = await fileClaim(args);
+  pass("a small claim files through the relay", `${filed.tgas} Tgas, ${filed.hash}`);
+  const card = await postCard(filed.id, envelope);
+  if (card.assessment !== "supported") return log("  the model did not support it, so the auto path does not apply:", card.assessment);
+  const c = await claim(filed.id);
+  if (c.status !== "VetoWindow") return fail("a well-supported small claim goes to the veto window", c.status);
+  pass("a well-supported $85 claim goes to the veto window");
+  await refused("the veto window holds until it ends", "still open", () => call(relay, FUND, "advance", { claim_id: filed.id }, { tgas: 300 }));
+  const { rules } = await view(FUND, "get_fund");
+  await sleep(Math.max(0, rules.veto_window_secs - 10));
+  for (let i = 0; i < 12; i++) {
+    const r = await call(relay, FUND, "advance", { claim_id: filed.id }, { tgas: 300 }).catch((e) => e);
+    if (!(r instanceof Error)) break;
+    await sleep(5);
+  }
+  const done = await settle(filed.id);
+  await expectPaid("an unvetoed small claim paid through the DAO's own proposal", done, args, 85, before);
 }
 
 async function scenarioPanelClaim() {
   const member = D.seededMembers[0];
-  const { args, evidence, fund } = await prepare(member, 250, "City General Hospital. Invoice for inpatient care, $250 outstanding, dated this month.");
-  const before = { dao: await balance(D.dao), payout: 0n };
+  const { args, envelope, fund } = await prepare(member, 250, "City General Hospital. Invoice for inpatient care, $250 outstanding, dated this month.", { minTier: 2 });
+  const before = await balance(D.dao);
   const filed = await fileClaim(args);
   pass("a member files a claim through the relay, with no name on it", `${filed.tgas} Tgas, ${filed.hash}`);
 
@@ -166,40 +187,34 @@ async function scenarioPanelClaim() {
   if (raw.includes(member.split(".")[0])) fail("the claim does not name its member", "the member's name is in the claim");
   else pass("the claim does not name its member");
 
-  const card = await runReview(filed.id, evidence, fund);
-  if (!card) {
-    log("  no NEAR_AI_API_KEY; waiting for the review window, so the claim falls back to people");
+  if (await postCard(filed.id, envelope).catch((e) => log("  no card:", e.message))) {
+    log("  the card is on chain");
+  } else {
+    log("  waiting for the review window, so the claim falls back to people");
     await sleep(fund.rules.review_window_secs + 5);
     await call(relay, FUND, "advance", { claim_id: filed.id });
   }
   const c = await waitForStatus(filed.id, "PanelVoting", 30);
   pass("a $250 claim goes to a panel of three random members", c.panel.join(", "));
 
-  const demoKey = S.demoKey;
   for (const voter of c.panel.slice(0, 2)) {
     // Panelists hold no NEAR for gas: each signs a delegate action and the relay pays.
-    const { signedDelegate } = await new Account(voter, provider, demoKey).createSignedMetaTransaction({
+    const { signedDelegate } = await new Account(voter, provider, S.demoKey).createSignedMetaTransaction({
       receiverId: FUND,
       actions: [actions.functionCall("panel_vote", { claim_id: filed.id, approve: true }, teraToGas(30), 0n)],
     });
     outcome(await relay.signAndSendTransaction({ receiverId: voter, actions: [actions.signedDelegate(signedDelegate)], throwOnFailure: false }));
   }
   await waitForStatus(filed.id, "Approved", 15);
-  const paid = await call(relay, FUND, "advance", { claim_id: filed.id }, { tgas: 300 });
-  const done = await waitForStatus(filed.id, "Paid", 30);
-  const got = await balance(args.payout);
-  const after = await balance(D.dao);
-  if (got === 250n * USD && before.dao - after === 250n * USD) {
-    pass("the DAO paid a fresh address through its own proposal", `proposal #${done.proposal_id}, $250, ${paid.hash}`);
-  } else {
-    fail("the DAO paid a fresh address", `payout ${got}, DAO change ${before.dao - after}`);
-  }
-  return { args };
+  await call(relay, FUND, "advance", { claim_id: filed.id }, { tgas: 300 });
+  const done = await settle(filed.id);
+  await expectPaid("the DAO paid a fresh address through its own proposal", done, args, 250, before);
 }
 
 async function scenarioCouncilClaim() {
   const member = D.seededMembers[1];
   const { args, fund } = await prepare(member, 600, "Eviction notice with $600 arrears.");
+  const before = await balance(D.dao);
   const filed = await fileClaim(args);
   await sleep(fund.rules.review_window_secs + 5);
   await call(relay, FUND, "advance", { claim_id: filed.id });
@@ -216,21 +231,20 @@ async function scenarioCouncilClaim() {
     await call(new Account(voter, provider, S.demoKey), D.dao, "act_proposal", { id: p.id, action: "VoteApprove", proposal: p.kind }, { tgas: 300 });
   }
   await call(relay, FUND, "advance", { claim_id: filed.id }, { tgas: 100 });
-  await waitForStatus(filed.id, "Paid", 30);
-  const got = await balance(args.payout);
-  if (got === 600n * USD) pass("the council's vote paid the claim", `$600 to a fresh address`);
-  else fail("the council's vote paid the claim", `payout ${got}`);
+  const done = await settle(filed.id);
+  await expectPaid("the council's vote paid the claim", done, args, 600, before);
 }
 
 async function attacks() {
   const member = D.seededMembers[2];
-  const { args, fund } = await prepare(member, 50, "A short note.");
+  const { args } = await prepare(member, 50, "A short note.");
+  const refuseFiling = (patch) => () => call(relay, FUND, "file_claim", { ...args, ...patch }, { tgas: 120 });
 
-  const mutated = { ...args, amount: String(500n * USD) };
-  await refused("a relay cannot raise the amount", "Above the cover", () => call(relay, FUND, "file_claim", { ...mutated, amount: String(301n * USD) }, { tgas: 120 }));
-  await refused("a relay cannot change the amount within cover", "does not verify", () => call(relay, FUND, "file_claim", { ...args, amount: String(60n * USD) }, { tgas: 120 }));
-  await refused("a relay cannot redirect the payout", "does not verify", () => call(relay, FUND, "file_claim", { ...args, payout: relayId }, { tgas: 120 }));
-  await refused("a made-up member root is refused", "Unknown or stale", () => call(relay, FUND, "file_claim", { ...args, root: "22".repeat(32) }, { tgas: 120 }));
+  await refused("a relay cannot raise the amount past the cover", "Above the cover", refuseFiling({ amount: String(801n * USD) }));
+  await refused("a relay cannot change the amount within cover", "does not verify", refuseFiling({ amount: String(60n * USD) }));
+  await refused("a relay cannot redirect the payout", "does not verify", refuseFiling({ payout: relayId }));
+  await refused("the DAO cannot be the payout", "cannot be the payout", refuseFiling({ payout: D.dao }));
+  await refused("a made-up member root is refused", "Unknown or stale", refuseFiling({ root: "22".repeat(32) }));
 
   const filed = await fileClaim(args);
   pass("the honest version of the same claim files", filed.hash);
@@ -242,40 +256,28 @@ async function attacks() {
   await refused("strangers cannot vote on a panel", "not with a panel", () =>
     call(relay, FUND, "panel_vote", { claim_id: filed.id, approve: true }, { tgas: 30 }),
   );
-  await refused("a forged review is refused", "bad enclave signature", () =>
-    call(
-      relay,
-      FUND,
-      "post_review",
-      {
-        claim_id: filed.id,
-        signed_text: `${MODEL}:${"00".repeat(32)}:${"00".repeat(32)}`,
-        signature: "11".repeat(64),
-        system_envelope: "ab".repeat(80),
-        system_eph_secret: "cd".repeat(32),
-        evidence_envelope: encryptTo(fund.reviewer.signer, "x").envelope,
-        response_body: "{}",
-        verdict_key: "00".repeat(32),
-      },
-      { tgas: 100 },
-    ),
+  await refused("a forged card is refused", "bad clerk signature", () =>
+    call(relay, FUND, "post_card", { claim_id: filed.id, card: TEST_CARD, signature: "11".repeat(64) }, { tgas: 100 }),
   );
-  await refused("only the DAO pins the reader", "Only the DAO", () =>
-    call(relay, FUND, "set_reviewer", { model_id: MODEL, signer: "00".repeat(32), prompt_sha256: "00".repeat(32), max_tokens: MAX_TOKENS }, { tgas: 30 }),
+  await refused("only the DAO pins the clerk", "Only the DAO", () =>
+    call(relay, FUND, "set_reviewer", { signer: "00".repeat(32), encryption_key: "00".repeat(32), code_hash: "x", prompt_sha256: "00".repeat(32) }, { tgas: 30 }),
   );
-  await refused("the fund cannot pay outside a claim", "ERR_PERMISSION_DENIED", () => call(relay, D.dao, "act_proposal", { id: 0, action: "VoteApprove" }, { tgas: 100 }).catch((e) => {
-    throw new Error(/permission|ERR_/i.test(e.message) ? "ERR_PERMISSION_DENIED" : e.message);
-  }));
+  await refused("the fund's relay has no power over the DAO", "ERR_PERMISSION_DENIED", () =>
+    call(relay, D.dao, "act_proposal", { id: 0, action: "VoteApprove" }, { tgas: 100 }).catch((e) => {
+      throw new Error(/permission|ERR_|proposal/i.test(e.message) ? "ERR_PERMISSION_DENIED" : e.message);
+    }),
+  );
   return filed;
 }
 
 async function main() {
   await init({ module_or_path: readFileSync(join(ROOT, "web", "public", "zk", "tideover_wasm_bg.wasm")) });
   const only = process.argv[2];
+  if (!only || only === "auto") await scenarioAutoClaim();
   if (!only || only === "panel") await scenarioPanelClaim();
   if (!only || only === "attacks") await attacks();
   if (!only || only === "council") await scenarioCouncilClaim();
-  writeJson(join(ROOT, "docs", "e2e-testnet.json"), { at: new Date().toISOString(), fund: FUND, results });
+  writeJson(join(ROOT, "docs", "e2e-testnet.json"), { at: new Date().toISOString(), fund: FUND, model: Boolean(apiKey), results });
   const ok = results.filter((r) => r.ok).length;
   log(`${ok} of ${results.length} checks passed`);
 }

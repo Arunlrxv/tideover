@@ -4,8 +4,10 @@ import { useMemo, useState } from "react";
 import { getPolicy, view, type Policy } from "@/lib/chain";
 import { D, accountUrl } from "@/lib/config";
 import { cliCommand, createFundProposal, fundAccount, roleProposal } from "@/lib/install";
+import type { FundView } from "@/lib/types";
 
 type Check = { dao: string; policy: Policy; hasFundRole: boolean; deposit: string };
+type NewFund = "missing" | "ours" | "theirs";
 
 function CopyBlock({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -35,6 +37,7 @@ export default function InstallPage() {
   const [dues, setDues] = useState(10);
   const [guardian, setGuardian] = useState("");
   const [check, setCheck] = useState<Check | null>(null);
+  const [newFund, setNewFund] = useState<NewFund | null>(null);
   const [error, setError] = useState("");
 
   async function inspect() {
@@ -48,10 +51,17 @@ export default function InstallPage() {
     }
   }
 
+  /** Proposal two hands a role to this account, so it must be this DAO's own fund. */
+  async function inspectFund(dao: string) {
+    setNewFund(null);
+    const fund = await view<FundView>(fundAccount(name), "get_fund").catch(() => null);
+    setNewFund(!fund ? "missing" : fund.dao === dao ? "ours" : "theirs");
+  }
+
   const commands = useMemo(() => {
     if (!check) return null;
     const bond = check.policy.proposal_bond;
-    const input = { dao: check.dao, name, guardian, duesDollars: dues, bond, deposit: check.deposit };
+    const input = { dao: check.dao, name, guardian, duesDollars: dues, bond, proposalPeriod: check.policy.proposal_period, deposit: check.deposit };
     return {
       fund: cliCommand(check.dao, createFundProposal(input), bond, signer),
       role: cliCommand(check.dao, roleProposal(name), bond, signer),
@@ -134,10 +144,22 @@ export default function InstallPage() {
         <div className="card">
           <h3>4. File proposal two: give it a limited role</h3>
           <p className="muted">
-            Once proposal one passes. The fund&apos;s only power is to add and approve transfers. It can&apos;t change your policy, add
-            members or touch anything else.
+            Once proposal one passes. The fund&apos;s only power is over transfers: it can add one, approve one, and finalise one that
+            failed or expired. It can&apos;t change your policy, add members or touch anything else.
           </p>
-          {commands ? <CopyBlock text={commands.role} /> : <p className="muted small">Read your DAO&apos;s policy above to generate this.</p>}
+          {!check && <p className="muted small">Read your DAO&apos;s policy above to generate this.</p>}
+          {check && (
+            <button className="btn ghost small-btn" onClick={() => inspectFund(check.dao)}>
+              Check the new fund first
+            </button>
+          )}
+          {newFund === "missing" && <div className="notice">There is no fund at that name yet. Wait for proposal one to pass.</div>}
+          {newFund === "theirs" && (
+            <div className="notice bad">
+              That name belongs to another DAO&apos;s fund. Don&apos;t give it a role. Choose another name and file proposal one again.
+            </div>
+          )}
+          {newFund === "ours" && commands && <CopyBlock text={commands.role} />}
         </div>
 
         <div className="card">

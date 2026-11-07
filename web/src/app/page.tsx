@@ -80,8 +80,8 @@ export default function Home() {
             <li>
               <h3>Seal the reason</h3>
               <p className="muted">
-                Your document is encrypted in your browser. Only an AI model in a secure enclave reads it, and it can only
-                answer in fixed fields, so it has no way to repeat a name.
+                Your document is encrypted in your browser, to a small program in a secure enclave. It reads the document
+                with an AI model and answers in fixed fields, so it has no way to repeat a name.
               </p>
             </li>
             <li>

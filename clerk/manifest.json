@@ -1,0 +1,8 @@
+{
+  "capabilities": {
+    "network": [
+      { "host": "cloud-api.near.ai", "timeout_secs": 100 },
+      { "host": "rpc.testnet.fastnear.com", "timeout_secs": 20 }
+    ]
+  }
+}

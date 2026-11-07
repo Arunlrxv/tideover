@@ -35,6 +35,7 @@ export const commitmentOf = (secret: string) => ask<string>("commitment", { secr
 export type ClaimRequest = {
   secret: string;
   fund: string;
+  cycle: number;
   window: number;
   tier: number;
   period: number;
@@ -56,6 +57,7 @@ export type AuditRequest = {
   min_tier: number;
   nullifier: string;
   fund: string;
+  cycle: number;
   window: number;
   amount: string;
   payout: string;

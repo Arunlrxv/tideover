@@ -6,9 +6,9 @@
 //!
 //! A claim carries no name and no reason. It carries a zero-knowledge proof that
 //! a paid-up member at a given level made it, a commitment to a sealed document,
-//! and later a sealed reader's card made of closed fields. The route then depends
-//! on the amount: small claims pay after a veto window, mid-size claims go to a
-//! panel of random members, and large claims become normal council proposals.
+//! and later a card of closed fields signed by the sealed clerk. The route then
+//! depends on the amount: small claims pay after a veto window, mid-size claims go
+//! to a panel of random members, and large claims become normal council proposals.
 //!
 //! The AI never moves money. It can only choose the path a claim takes, and every
 //! path is bounded by limits this contract enforces.
@@ -45,6 +45,14 @@ const MAX_GUARDIANS: usize = 16;
 const MAX_ROSTER_SCAN: u32 = 512;
 /// NEP-145 registration for a standard fungible token account.
 const FT_STORAGE_DEPOSIT: u128 = 1_250_000_000_000_000_000_000;
+/// Left unspent, so a callback can always pay for the state it writes.
+const NEAR_MARGIN: u128 = 10_000_000_000_000_000_000_000;
+/// Sputnik sets a proposal `Approved` first and runs the transfer in a detached
+/// receipt, which may fail and turn it to `Failed`. This is how long the fund waits
+/// before it believes `Approved`.
+const SETTLE_SECS: u64 = 20;
+/// How long a filing can be in flight before anyone may look at what became of it.
+const IN_FLIGHT_SECS: u64 = 300;
 
 const GAS_FT_TRANSFER: Gas = Gas::from_tgas(20);
 const GAS_STORAGE_DEPOSIT: Gas = Gas::from_tgas(10);
@@ -52,6 +60,8 @@ const GAS_ADD_PROPOSAL: Gas = Gas::from_tgas(20);
 const GAS_ACT_PROPOSAL: Gas = Gas::from_tgas(80);
 const GAS_VIEW_PROPOSAL: Gas = Gas::from_tgas(10);
 const GAS_CALLBACK: Gas = Gas::from_tgas(15);
+/// Reading a proposal may lead to a Finalize, so its callback has to be able to pay for one.
+const GAS_ON_READ: Gas = Gas::from_tgas(95);
 
 #[ext_contract(ext_ft)]
 #[allow(dead_code)]
@@ -67,6 +77,7 @@ enum StorageKey {
     Leaves,
     Tags,
     Claims,
+    PeriodTiers,
 }
 
 #[near(contract_state)]
@@ -87,6 +98,9 @@ pub struct Contract {
     leaves: Vector<[u8; 32]>,
     recent_roots: Vec<[u8; 32]>,
     tags: LookupMap<[u8; 32], TagRecord>,
+    /// Who paid each period, counted by tier. This is the size of the crowd a
+    /// proof hides in.
+    period_tiers: LookupMap<u64, Vec<u32>>,
 
     claims: Vector<Claim>,
     reviewer: Option<Reviewer>,
@@ -127,6 +141,7 @@ impl Contract {
             leaves: Vector::new(StorageKey::Leaves),
             recent_roots,
             tags: LookupMap::new(StorageKey::Tags),
+            period_tiers: LookupMap::new(StorageKey::PeriodTiers),
             claims: Vector::new(StorageKey::Claims),
             reviewer: None,
             cycle_index: 0,
@@ -162,22 +177,25 @@ impl Contract {
         self.registrar = registrar;
     }
 
-    /// Pins the enclave key and the prompt. Check the attestation before voting for this.
+    /// Pins the clerk's keys. Check the enclave's attestation before voting for this.
     pub fn set_reviewer(
         &mut self,
-        model_id: String,
         signer: String,
+        encryption_key: String,
+        code_hash: String,
         prompt_sha256: String,
-        max_tokens: u32,
     ) {
         self.only_dao();
         self.reviewer = Some(review::new_reviewer(
-            model_id,
             &signer,
+            &encryption_key,
+            code_hash.clone(),
             &prompt_sha256,
-            max_tokens,
         ));
-        emit("reviewer_set", json!({ "signer": signer, "prompt_sha256": prompt_sha256 }));
+        emit(
+            "reviewer_set",
+            json!({ "signer": signer, "code_hash": code_hash }),
+        );
     }
 
     pub fn resume(&mut self) {
@@ -197,12 +215,7 @@ impl Contract {
 
     /// Admits a member. `prior_periods` carries over a record the community
     /// already holds, so moving to Tideover does not restart anyone's waiting period.
-    pub fn admit(
-        &mut self,
-        account: AccountId,
-        prior_periods: u32,
-        commitment: Option<String>,
-    ) {
+    pub fn admit(&mut self, account: AccountId, prior_periods: u32, commitment: Option<String>) {
         let caller = env::predecessor_account_id();
         require!(
             caller == self.dao || Some(&caller) == self.registrar.as_ref(),
@@ -219,11 +232,15 @@ impl Contract {
                 service_points: 0,
                 last_paid_period: None,
                 leaf: None,
+                prev_leaf: None,
                 active: true,
             },
         );
         self.roster.push(account.clone());
-        emit("member_admitted", json!({ "account": account, "prior_periods": prior_periods }));
+        emit(
+            "member_admitted",
+            json!({ "account": account, "prior_periods": prior_periods }),
+        );
     }
 
     // ---------- Member calls ----------
@@ -281,6 +298,17 @@ impl Contract {
         let position = self.tree.insert(leaf);
         self.leaves.push(fr_to_bytes(&leaf));
         self.remember_root();
+        let mut counts = self
+            .period_tiers
+            .get(&period)
+            .cloned()
+            .unwrap_or_else(|| vec![0; self.rules.tiers.len()]);
+        if counts.len() <= tier as usize {
+            counts.resize(tier as usize + 1, 0);
+        }
+        counts[tier as usize] += 1;
+        self.period_tiers.insert(period, counts);
+        member.prev_leaf = member.leaf.take();
         member.leaf = Some(Leaf {
             position,
             period,
@@ -333,7 +361,11 @@ impl Contract {
         ext_ft::ext(self.token.clone())
             .with_attached_deposit(NearToken::from_yoctonear(1))
             .with_static_gas(GAS_FT_TRANSFER)
-            .ft_transfer(self.dao.clone(), U128(amount), Some("Tideover dues".to_string()))
+            .ft_transfer(
+                self.dao.clone(),
+                U128(amount),
+                Some("Tideover dues".to_string()),
+            )
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(GAS_CALLBACK)
@@ -373,6 +405,8 @@ impl Contract {
     ) -> U64 {
         require!(!self.paused, "The fund is paused");
         require!(amount.0 > 0, "Amount must be greater than zero");
+        // A transfer to the DAO itself always fails, and a failed proposal keeps its bond.
+        require!(payout != self.dao, "The DAO cannot be the payout address");
         let tier = self
             .rules
             .tiers
@@ -391,6 +425,10 @@ impl Contract {
             self.recent_roots.contains(&root_bytes),
             "Unknown or stale member root"
         );
+        require!(
+            self.group_size(period, min_tier) >= self.rules.min_group,
+            "Too few members at this tier this period to hide this claim"
+        );
 
         self.roll_cycle();
         let cycle = self.cycle_index;
@@ -407,7 +445,13 @@ impl Contract {
         let evidence_digest = review::unhex32(&evidence_sha256, "evidence hash");
         let fund = env::current_account_id();
         let scope = identity::scope(fund.as_str(), window);
-        let signal = identity::signal(fund.as_str(), amount.0, payout.as_str(), &evidence_digest);
+        let signal = identity::signal(
+            fund.as_str(),
+            cycle,
+            amount.0,
+            payout.as_str(),
+            &evidence_digest,
+        );
         let inputs = [
             root_bytes,
             fr_to_bytes(&Fr::from(period)),
@@ -447,7 +491,9 @@ impl Contract {
         );
         self.cycle_committed += amount.0;
         let id = self.claims.len() as u64;
-        let nonce = hex::encode(&env::sha256(&[env::random_seed(), id.to_le_bytes().to_vec()].concat())[..16]);
+        let nonce = hex::encode(
+            &env::sha256([env::random_seed(), id.to_le_bytes().to_vec()].concat())[..16],
+        );
         let now = env::block_timestamp();
         self.claims.push(Claim {
             id: U64(id),
@@ -464,70 +510,56 @@ impl Contract {
             card: None,
             deadline: U64(now + self.rules.review_window_secs * NS_PER_SEC),
             nonce,
-            evidence_sha256,
+            // Stored from the bytes, not as given, so a relay's choice of letter
+            // case cannot make the clerk's hash fail to match later.
+            evidence_sha256: hex::encode(evidence_digest),
             panel: vec![],
             votes: vec![],
             proposal_id: None,
             paid_at: None,
             note: None,
-            root,
+            root: hex::encode(root_bytes),
             nullifier: hex::encode(nullifier_bytes),
             period,
             proof,
-            signed_text: None,
-            signature: None,
+            card_signature: None,
         });
-        emit("claim_filed", json!({ "id": U64(id), "amount": amount, "min_tier": min_tier }));
+        emit(
+            "claim_filed",
+            json!({ "id": U64(id), "amount": amount, "min_tier": min_tier }),
+        );
         U64(id)
     }
 
-    /// Posts the sealed reader's verdict. Anyone can post it, because the checks in
-    /// `review` need no trust in whoever does.
-    #[allow(clippy::too_many_arguments)]
-    pub fn post_review(
-        &mut self,
-        claim_id: U64,
-        signed_text: String,
-        signature: String,
-        system_envelope: String,
-        system_eph_secret: String,
-        evidence_envelope: String,
-        response_body: String,
-        verdict_key: String,
-    ) -> Card {
+    /// Posts the clerk's card. Anyone can submit it, because the signature is what
+    /// authorises it, and that signature covers the claim, its nonce, its evidence,
+    /// its amount and its payout.
+    pub fn post_card(&mut self, claim_id: U64, card: Card, signature: String) {
         let mut claim = self.claim_of(claim_id);
         let reviewer = self
             .reviewer
             .as_ref()
-            .unwrap_or_else(|| env::panic_str("The DAO has not pinned a reviewer"));
-        let case = self.case_file_of(&claim);
-        let card = review::verify(
-            reviewer,
-            &review::Sealed {
-                signed_text: &signed_text,
-                signature_hex: &signature,
-                system_envelope: &system_envelope,
-                system_eph_secret_hex: &system_eph_secret,
-                evidence_envelope: &evidence_envelope,
-                response_body: &response_body,
-                verdict_key_hex: &verdict_key,
-            },
+            .unwrap_or_else(|| env::panic_str("The DAO has not pinned a clerk"));
+        let message = review::card_message(
+            env::current_account_id().as_str(),
             claim.id.0,
-            &case,
             &claim.nonce,
             &claim.evidence_sha256,
+            claim.amount.0,
+            claim.payout.as_str(),
+            &card,
         );
+        review::verify_signature(reviewer, &message, &signature);
+        review::validate_card(&card);
         // Checked after the signature, so a forgery is refused as a forgery.
         require!(
             claim.status == ClaimStatus::AwaitingReview,
             "This claim is not waiting for a review"
         );
-        claim.card = Some(card.clone());
-        claim.signed_text = Some(signed_text);
-        claim.signature = Some(signature);
+        claim.card = Some(card);
+        claim.card_signature = Some(signature);
         self.route(&mut claim);
         self.set_claim(claim);
-        card
     }
 
     /// A guardian sends an auto-approved claim to the council instead.
@@ -562,7 +594,10 @@ impl Contract {
             claim.status == ClaimStatus::PanelVoting,
             "This claim is not with a panel"
         );
-        require!(env::block_timestamp() < claim.deadline.0, "The panel window has closed");
+        require!(
+            env::block_timestamp() < claim.deadline.0,
+            "The panel window has closed"
+        );
         require!(claim.panel.contains(&voter), "You are not on this panel");
         require!(
             !claim.votes.iter().any(|v| v.member == voter),
@@ -588,7 +623,10 @@ impl Contract {
             claim.note = Some("Declined by the panel".to_string());
             self.release_budget(&claim);
         }
-        emit("panel_vote", json!({ "id": claim.id, "member": voter, "approve": approve }));
+        emit(
+            "panel_vote",
+            json!({ "id": claim.id, "member": voter, "approve": approve }),
+        );
         self.set_claim(claim);
     }
 
@@ -620,19 +658,30 @@ impl Contract {
                 None
             }
             ClaimStatus::NeedsCouncil => Some(self.file_for_council(claim_id)),
-            ClaimStatus::CouncilVote => {
-                let proposal_id = claim
-                    .proposal_id
-                    .unwrap_or_else(|| env::panic_str("No DAO proposal yet"));
-                Some(
-                    self.get_proposal(proposal_id).then(
-                        Self::ext(env::current_account_id())
-                            .with_static_gas(GAS_CALLBACK)
-                            .on_council_checked(claim_id),
-                    ),
-                )
+            ClaimStatus::Paying | ClaimStatus::Filing => {
+                require!(now >= claim.deadline.0, "This filing is still in flight");
+                if claim.proposal_id.is_some() {
+                    return Some(self.read_proposal(&claim));
+                }
+                // The callback never ran, so nothing was approved. Going back to the
+                // earlier state matters: a vetoed claim must not become an approved one.
+                claim.status = if claim.status == ClaimStatus::Filing {
+                    ClaimStatus::NeedsCouncil
+                } else {
+                    ClaimStatus::Approved
+                };
+                claim.note = Some("The filing did not finish; try again".to_string());
+                self.set_claim(claim);
+                None
             }
-            _ => env::panic_str("There is nothing left to do for this claim"),
+            ClaimStatus::Settling => {
+                require!(now >= claim.deadline.0, "The payment is still settling");
+                Some(self.read_proposal(&claim))
+            }
+            ClaimStatus::CouncilVote => Some(self.read_proposal(&claim)),
+            ClaimStatus::Paid | ClaimStatus::Rejected => {
+                env::panic_str("There is nothing left to do for this claim")
+            }
         }
     }
 
@@ -662,79 +711,81 @@ impl Contract {
         claim.proposal_id = Some(proposal_id);
         if !approve {
             claim.status = ClaimStatus::CouncilVote;
-            emit("claim_with_council", json!({ "id": claim.id, "proposal_id": proposal_id }));
+            claim.deadline =
+                U64(env::block_timestamp() + self.rules.council_window_secs * NS_PER_SEC);
+            emit(
+                "claim_with_council",
+                json!({ "id": claim.id, "proposal_id": proposal_id }),
+            );
             self.set_claim(claim);
             return None;
         }
-        let args = json!({
-            "id": proposal_id,
-            "action": "VoteApprove",
-            "proposal": self.transfer_kind(&claim),
-        });
+        let vote = self.act_on_proposal(&claim, "VoteApprove");
         self.set_claim(claim);
         Some(
-            Promise::new(self.dao.clone())
-                .function_call(
-                    "act_proposal".to_string(),
-                    args.to_string().into_bytes(),
-                    NearToken::from_yoctonear(0),
-                    GAS_ACT_PROPOSAL,
-                )
+            vote
                 // The vote can succeed without approving, so read the proposal back.
                 .then(self.get_proposal(proposal_id))
-                .then(
-                    Self::ext(env::current_account_id())
-                        .with_static_gas(GAS_CALLBACK)
-                        .on_payment_checked(claim_id),
-                ),
+                .then(self.on_read(claim_id)),
         )
     }
 
-    /// Records the payment from the DAO's own account of what happened.
+    /// Acts on what the DAO's own record says. This is the only place a claim
+    /// becomes Paid, and one proposal carries a claim from start to finish, so a
+    /// retry can never pay twice.
     #[private]
-    pub fn on_payment_checked(
+    pub fn on_proposal_read(
         &mut self,
         claim_id: U64,
         #[callback_result] result: Result<Value, PromiseError>,
-    ) {
+    ) -> Option<Promise> {
         let mut claim = self.claim_of(claim_id);
-        match proposal_status(&result).as_str() {
-            "Approved" => self.mark_paid(&mut claim),
-            "InProgress" => {
-                claim.status = ClaimStatus::CouncilVote;
-                claim.note = Some("The fund's vote did not pass; waiting for the council".to_string());
-            }
-            other => {
-                claim.status = ClaimStatus::Approved;
-                claim.note = Some(format!("The DAO marked the payment as {other}; try again"));
-            }
+        if matches!(claim.status, ClaimStatus::Paid | ClaimStatus::Rejected) {
+            return None;
         }
-        self.set_claim(claim);
-    }
-
-    #[private]
-    pub fn on_council_checked(
-        &mut self,
-        claim_id: U64,
-        #[callback_result] result: Result<Value, PromiseError>,
-    ) {
-        let mut claim = self.claim_of(claim_id);
-        if claim.status != ClaimStatus::CouncilVote {
-            return;
-        }
+        let now = env::block_timestamp();
+        let mut follow_up = None;
         match proposal_status(&result).as_str() {
-            "Approved" => self.mark_paid(&mut claim),
-            "InProgress" => {
-                env::log_str("Still with the council");
-                return;
+            "Approved" => {
+                if claim.status == ClaimStatus::Settling {
+                    self.mark_paid(&mut claim);
+                } else {
+                    // Sputnik says Approved before the transfer has run. Look again.
+                    claim.status = ClaimStatus::Settling;
+                    claim.deadline = U64(now + SETTLE_SECS * NS_PER_SEC);
+                }
             }
+            "Failed" => {
+                // Nothing moved, for example because the DAO was short of the token.
+                // The claim stays approved, and the same proposal is tried again.
+                claim.status = ClaimStatus::Settling;
+                claim.deadline = U64(now + SETTLE_SECS * NS_PER_SEC);
+                claim.note = Some("The DAO could not send this yet; retrying".to_string());
+                if !self.paused {
+                    follow_up = Some(self.act_on_proposal(&claim, "Finalize"));
+                }
+            }
+            "InProgress" => {
+                if claim.status != ClaimStatus::CouncilVote {
+                    claim.status = ClaimStatus::CouncilVote;
+                    claim.deadline = U64(now + self.rules.council_window_secs * NS_PER_SEC);
+                    claim.note =
+                        Some("The fund's vote did not pass; waiting for the council".to_string());
+                } else if now >= claim.deadline.0 {
+                    // Sputnik only notices an expired proposal when someone asks.
+                    // Finalising it returns the bond and ends it as Expired.
+                    follow_up = Some(self.act_on_proposal(&claim, "Finalize"));
+                }
+            }
+            "Unknown" => env::log_str("The DAO's answer had no status"),
             other => {
                 claim.status = ClaimStatus::Rejected;
-                claim.note = Some(format!("The council's proposal ended as {other}"));
+                claim.note = Some(format!("The DAO's proposal ended as {other}"));
                 self.release_budget(&claim);
             }
         }
         self.set_claim(claim);
+        follow_up
     }
 
     // ---------- Views ----------
@@ -779,10 +830,10 @@ impl Contract {
             unforwarded: U128(self.unforwarded),
             spare_near: U128(spare_near()),
             reviewer: self.reviewer.as_ref().map(|r| ReviewerView {
-                model_id: r.model_id.clone(),
                 signer: hex::encode(r.signer),
+                encryption_key: hex::encode(r.encryption_key),
+                code_hash: r.code_hash.clone(),
                 prompt_sha256: hex::encode(r.prompt_sha256),
-                max_tokens: r.max_tokens,
             }),
         }
     }
@@ -799,6 +850,7 @@ impl Contract {
             service_points: m.service_points,
             last_paid_period: m.last_paid_period,
             leaf: m.leaf.clone(),
+            prev_leaf: m.prev_leaf.clone(),
             active: m.active,
             score,
             tier,
@@ -840,6 +892,11 @@ impl Contract {
             })
             .cloned()
             .collect()
+    }
+
+    /// The crowd a claim would hide in, for a period and a tier.
+    pub fn get_group_size(&self, period: u64, min_tier: u8) -> u32 {
+        self.group_size(period, min_tier)
     }
 
     pub fn get_leaves(&self, from_index: u32, limit: u32) -> Vec<String> {
@@ -964,7 +1021,12 @@ impl Contract {
 
     /// Sends a claim down the path its amount and card call for.
     fn route(&mut self, claim: &mut Claim) {
-        let route = route_for(&self.rules, claim.amount.0, claim.card.as_ref(), claim.prior_claims);
+        let route = route_for(
+            &self.rules,
+            claim.amount.0,
+            claim.card.as_ref(),
+            claim.prior_claims,
+        );
         let route = if route == Route::Panel {
             match self.draw_panel(claim.id.0) {
                 Some(panel) => {
@@ -1015,9 +1077,7 @@ impl Contract {
         if eligible.len() < size {
             return None;
         }
-        let mut seed = env::sha256(
-            &[env::random_seed(), claim_id.to_le_bytes().to_vec()].concat(),
-        );
+        let mut seed = env::sha256([env::random_seed(), claim_id.to_le_bytes().to_vec()].concat());
         let mut panel = Vec::with_capacity(size);
         for _ in 0..size {
             seed = env::sha256(&seed);
@@ -1042,7 +1102,7 @@ impl Contract {
     fn add_transfer_proposal(&self, claim: &Claim, approve: bool) -> Promise {
         let bond = self.rules.proposal_bond.0;
         require!(
-            spare_near() >= bond + FT_STORAGE_DEPOSIT,
+            spare_near() >= bond + FT_STORAGE_DEPOSIT + NEAR_MARGIN,
             "The fund needs more NEAR for bonds; call fund_bonds"
         );
         let description = format!("Tideover claim #{}. Reason sealed.", claim.id.0);
@@ -1069,7 +1129,7 @@ impl Contract {
                     .with_static_gas(
                         GAS_ACT_PROPOSAL
                             .saturating_add(GAS_VIEW_PROPOSAL)
-                            .saturating_add(GAS_CALLBACK)
+                            .saturating_add(GAS_ON_READ)
                             .saturating_add(GAS_CALLBACK),
                     )
                     .on_proposal_added(claim.id, approve),
@@ -1080,6 +1140,7 @@ impl Contract {
         require!(!self.paused, "The fund is paused");
         let mut claim = self.claim_of(claim_id);
         claim.status = ClaimStatus::Paying;
+        claim.deadline = U64(env::block_timestamp() + IN_FLIGHT_SECS * NS_PER_SEC);
         let promise = self.add_transfer_proposal(&claim, true);
         self.set_claim(claim);
         promise
@@ -1088,10 +1149,25 @@ impl Contract {
     fn file_for_council(&mut self, claim_id: U64) -> Promise {
         require!(!self.paused, "The fund is paused");
         let mut claim = self.claim_of(claim_id);
-        claim.status = ClaimStatus::Paying;
+        claim.status = ClaimStatus::Filing;
+        claim.deadline = U64(env::block_timestamp() + IN_FLIGHT_SECS * NS_PER_SEC);
         let promise = self.add_transfer_proposal(&claim, false);
         self.set_claim(claim);
         promise
+    }
+
+    fn act_on_proposal(&self, claim: &Claim, action: &str) -> Promise {
+        let args = json!({
+            "id": claim.proposal_id,
+            "action": action,
+            "proposal": self.transfer_kind(claim),
+        });
+        Promise::new(self.dao.clone()).function_call(
+            "act_proposal".to_string(),
+            args.to_string().into_bytes(),
+            NearToken::from_yoctonear(0),
+            GAS_ACT_PROPOSAL,
+        )
     }
 
     fn get_proposal(&self, proposal_id: u64) -> Promise {
@@ -1103,11 +1179,35 @@ impl Contract {
         )
     }
 
+    fn on_read(&self, claim_id: U64) -> Promise {
+        Self::ext(env::current_account_id())
+            .with_static_gas(GAS_ON_READ)
+            .on_proposal_read(claim_id)
+    }
+
+    fn read_proposal(&self, claim: &Claim) -> Promise {
+        let proposal_id = claim
+            .proposal_id
+            .unwrap_or_else(|| env::panic_str("No DAO proposal yet"));
+        self.get_proposal(proposal_id).then(self.on_read(claim.id))
+    }
+
+    /// How many paid this period at this tier or above. A proof hides among them.
+    fn group_size(&self, period: u64, min_tier: u8) -> u32 {
+        self.period_tiers
+            .get(&period)
+            .map(|counts| counts.iter().skip(min_tier as usize).sum())
+            .unwrap_or(0)
+    }
+
     fn mark_paid(&mut self, claim: &mut Claim) {
         claim.status = ClaimStatus::Paid;
         claim.paid_at = Some(U64(env::block_timestamp()));
         self.paid_out += claim.amount.0;
-        emit("claim_paid", json!({ "id": claim.id, "amount": claim.amount }));
+        emit(
+            "claim_paid",
+            json!({ "id": claim.id, "amount": claim.amount }),
+        );
     }
 }
 
@@ -1156,14 +1256,27 @@ fn parse_field_fr(hex_value: &str, what: &str) -> Fr {
 
 fn validate_rules(rules: &Rules) {
     require!(rules.dues.0 > 0, "Dues must be greater than zero");
-    require!(rules.period_secs >= 60, "A period must be at least a minute");
-    require!(rules.periods_per_cycle >= 1, "A cycle needs at least one period");
-    require!(rules.window_cycles >= 1, "A window needs at least one cycle");
+    require!(
+        rules.period_secs >= 60,
+        "A period must be at least a minute"
+    );
+    require!(
+        rules.periods_per_cycle >= 1,
+        "A cycle needs at least one period"
+    );
+    require!(
+        rules.window_cycles >= 1,
+        "A window needs at least one cycle"
+    );
+    require!(rules.min_group >= 1, "The smallest group is one member");
     require!(
         !rules.tiers.is_empty() && rules.tiers.len() <= MAX_TIERS,
         "A fund needs between 1 and 16 tiers"
     );
-    require!(rules.tiers[0].cap.0 == 0, "Tier 0 is the waiting period and has no cover");
+    require!(
+        rules.tiers[0].cap.0 == 0,
+        "Tier 0 is the waiting period and has no cover"
+    );
     require!(
         rules
             .tiers

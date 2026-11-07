@@ -6,7 +6,7 @@ import { getFund, getMember } from "@/lib/chain";
 import { txUrl } from "@/lib/config";
 import { toUnits, usd } from "@/lib/format";
 import { api, fileClaim, freshPayout, loadMember, prepareClaim, type LocalMember, type Prepared } from "@/lib/member";
-import { encryptTo, sha256hex } from "@/lib/sealed.mjs";
+import { sealTo, sha256hex } from "@/lib/sealed.mjs";
 import type { FundView } from "@/lib/types";
 
 type Outcome = { status: "running" | "refused" | "passed" | "error"; message?: string; hash?: string };
@@ -42,8 +42,8 @@ const ATTACKS: Attack[] = [
     title: "Swap the evidence",
     story: "Someone replaces the sealed document with one that would pass.",
     run: async (m, fund) => {
-      const other = encryptTo(fund.reviewer!.signer, "A far better document.");
-      return file(await honest(m, 20), { evidenceSha256: sha256hex(other.envelope) });
+      const other = sealTo(fund.reviewer!.encryption_key, "A far better document.");
+      return file(await honest(m, 20), { evidenceSha256: sha256hex(other) });
     },
   },
   {
@@ -61,18 +61,13 @@ const ATTACKS: Attack[] = [
   {
     id: "forge",
     title: "Forge the AI's verdict",
-    story: "You write your own 'supported' verdict and post it for the newest claim.",
+    story: "You write your own glowing card, with no clerk involved, and post it for the newest claim.",
     run: async () => {
       const fund = await getFund();
       return api("/api/review/post", {
         claim_id: String(Math.max(0, fund.claims - 1)),
-        signed_text: `${fund.reviewer?.model_id}:${"00".repeat(32)}:${"00".repeat(32)}`,
+        card: { category: "medical", document: "bill", recent: true, amount_matches: "yes", injection: false, assessment: "supported" },
         signature: "11".repeat(64),
-        system_envelope: "ab".repeat(80),
-        system_eph_secret: "cd".repeat(32),
-        evidence_envelope: "ef".repeat(80),
-        response_body: "{}",
-        verdict_key: "00".repeat(32),
       });
     },
   },

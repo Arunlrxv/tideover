@@ -95,12 +95,18 @@ impl AnonPoll {
     /// paying for gas: the proof is what authorises it.
     pub fn vote(&mut self, poll_id: u32, choice: u32, proof: String, nullifier: String) {
         let mut poll = self.poll_of(poll_id);
-        require!(env::block_timestamp() < poll.closes_at.0, "This poll has closed");
+        require!(
+            env::block_timestamp() < poll.closes_at.0,
+            "This poll has closed"
+        );
         require!((choice as usize) < poll.choices.len(), "Unknown choice");
 
         // Strict decoding: a non-canonical value could otherwise vote twice.
         let nullifier = fr_to_bytes(&field(&nullifier, "nullifier"));
-        require!(!self.spent.contains(&nullifier), "This member has already voted");
+        require!(
+            !self.spent.contains(&nullifier),
+            "This member has already voted"
+        );
 
         let inputs = [
             self.tree.root,
@@ -129,7 +135,10 @@ impl AnonPoll {
     }
 
     fn only_owner(&self) {
-        require!(env::predecessor_account_id() == self.owner, "Only the owner can do this");
+        require!(
+            env::predecessor_account_id() == self.owner,
+            "Only the owner can do this"
+        );
     }
 
     fn poll_of(&self, poll_id: u32) -> Poll {
@@ -218,7 +227,11 @@ mod tests {
         for s in &secrets {
             c.add_member(hex::encode(fr_to_bytes(&identity::commitment(*s))));
         }
-        c.open_poll("Fund the meetup?".to_string(), vec!["Yes".to_string(), "No".to_string()], 3600);
+        c.open_poll(
+            "Fund the meetup?".to_string(),
+            vec!["Yes".to_string(), "No".to_string()],
+            3600,
+        );
         (c, secrets)
     }
 
@@ -268,7 +281,11 @@ mod tests {
     fn a_member_can_vote_in_each_poll() {
         let (mut c, secrets) = poll_with_members();
         ctx("dao.testnet");
-        c.open_poll("Second poll?".to_string(), vec!["A".to_string(), "B".to_string()], 3600);
+        c.open_poll(
+            "Second poll?".to_string(),
+            vec!["A".to_string(), "B".to_string()],
+            3600,
+        );
         for poll in [0u32, 1] {
             let b = cast(&secrets, 3, poll, 0);
             ctx("any-relay.testnet");

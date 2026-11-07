@@ -107,7 +107,7 @@ export default function ClaimPage() {
       let card: Card | null = null;
       let readerNote: string | undefined;
       try {
-        card = await runSealedReview(id, prepared.fund, prepared.evidenceEnvelope);
+        card = await runSealedReview(id, prepared.envelope);
       } catch (e) {
         readerNote = (e as Error).message;
       }
@@ -124,7 +124,9 @@ export default function ClaimPage() {
 
   const cap = member ? fromUnits(member.cap) : 0;
   const busy = stage !== null;
-  const canSubmit = !busy && Boolean(doc.trim()) && dollars > 0 && dollars <= cap && member?.paid_this_period;
+  // Someone who paid last month can still claim, because a hard month is when dues slip.
+  const paidUp = Boolean(member?.leaf && fund && member.leaf.period + 1 >= fund.period);
+  const canSubmit = !busy && Boolean(doc.trim()) && dollars > 0 && dollars <= cap && paidUp;
 
   return (
     <div className="page">
@@ -137,9 +139,9 @@ export default function ClaimPage() {
             You need to be a member first. <Link href="/member">Join the fund</Link>, it takes a few seconds.
           </div>
         )}
-        {me && member && !member.paid_this_period && (
+        {me && member && fund && !paidUp && (
           <div className="notice">
-            Pay this month&apos;s dues first. <Link href="/member">Go to your membership</Link>
+            Pay your dues first. <Link href="/member">Go to your membership</Link>
           </div>
         )}
 

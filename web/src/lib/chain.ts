@@ -46,7 +46,7 @@ export const getClaim = (id: string) => view<Claim | null>(D.fund, "get_claim", 
 export const listClaims = (limit = 20, from = 0) => view<Claim[]>(D.fund, "list_claims", { from_index: from, limit });
 export const getMember = (account: string) => view<MemberView | null>(D.fund, "get_member", { account });
 export const panelCases = (account: string) => view<Claim[]>(D.fund, "panel_cases", { account });
-export const getCaseFile = (id: string) => view<string>(D.fund, "get_case_file", { claim_id: id });
+export const groupSize = (period: number, minTier: number) => view<number>(D.fund, "get_group_size", { period, min_tier: minTier });
 export const tokenBalance = (account: string) => view<string>(D.token, "ft_balance_of", { account_id: account });
 
 export async function allLeaves(total: number): Promise<string[]> {
@@ -62,6 +62,7 @@ export async function allLeaves(total: number): Promise<string[]> {
 export type Policy = {
   roles: { name: string; kind: unknown; permissions: string[]; vote_policy: Record<string, unknown> }[];
   proposal_bond: string;
+  proposal_period: string;
 };
 export const getPolicy = (dao: string) => view<Policy>(dao, "get_policy");
 export type Proposal = {
