@@ -5,7 +5,7 @@ These steps build a demo community on NEAR testnet. A real install on an existin
 ## You need
 
 - About 26 test NEAR. Most of it pays for contract storage: the DAO takes 6, the factory about 7, and the fund and token about 9 between them.
-- `NEAR_AI_API_KEY` from [cloud.near.ai](https://cloud.near.ai), if you want the sealed reader on. Without it, claims go to people after the review window.
+- `NEAR_AI_API_KEY` from the API Keys page at [cloud.near.ai](https://cloud.near.ai), if you want the sealed reader on. It starts with `sk-`. Without it, claims go to people after the review window. `npm run model-check` tries it on the sample documents before anything is deployed.
 
 ## Deploy the community
 

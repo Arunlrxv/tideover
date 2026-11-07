@@ -10,8 +10,13 @@ import { aiKey, log, writeJson, ROOT } from "./lib.mjs";
 import { join } from "node:path";
 
 const apiKey = aiKey();
+const WHERE = "A NEAR AI key comes from the API Keys page at https://cloud.near.ai, and starts with sk-.";
 if (!apiKey) {
-  console.error("No key yet. Put NEAR_AI_API_KEY in web/.env.local, then run this again.");
+  console.error(`No key yet. Put NEAR_AI_API_KEY in web/.env.local, then run this again. ${WHERE}`);
+  process.exit(1);
+}
+if (!/^sk-[0-9a-f]{32}$/.test(apiKey)) {
+  console.error(`The key in web/.env.local is not a NEAR AI key. ${WHERE}`);
   process.exit(1);
 }
 
@@ -28,6 +33,14 @@ const caseFile = (claim, dollars, nonce) =>
 
 async function ask(body) {
   const res = await fetch(MODEL_URL, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body });
+  if (res.status === 401) {
+    console.error(`NEAR AI refused this key, so it may be expired or deleted. ${WHERE}`);
+    process.exit(1);
+  }
+  if (res.status === 402) {
+    console.error("NEAR AI accepted the key, but this account has no credits. Add some on the Credits page at https://cloud.near.ai.");
+    process.exit(1);
+  }
   if (!res.ok) throw new Error(`NEAR AI answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return (await res.json()).choices?.[0]?.message?.content;
 }
