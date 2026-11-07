@@ -293,7 +293,7 @@ fn sealed_review(w: &World, id: U64, prompt: &str, verdict_json: &str, signer: &
     let evidence = evidence_envelope();
     let request = format!(
         "{{\"model\":\"{MODEL}\",\"messages\":[{{\"role\":\"system\",\"content\":\"{system_envelope}\"}},\
-         {{\"role\":\"user\",\"content\":\"{evidence}\"}}],\"max_tokens\":800,\"stream\":false}}"
+         {{\"role\":\"user\",\"content\":\"{evidence}\"}}],\"max_tokens\":800,\"temperature\":0,\"stream\":false}}"
     );
     let verdict_key = [21u8; 32];
     let mut eph_pub = [0u8; 32];

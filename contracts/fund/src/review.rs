@@ -153,7 +153,9 @@ pub fn verify(
     request.push_str(s.evidence_envelope);
     request.push_str("\"}],\"max_tokens\":");
     request.push_str(&r.max_tokens.to_string());
-    request.push_str(",\"stream\":false}");
+    // No sampling randomness, so a member cannot re-run the reader until they like
+    // the answer: the same sealed request should give the same verdict.
+    request.push_str(",\"temperature\":0,\"stream\":false}");
 
     let mut parts = s.signed_text.rsplitn(3, ':');
     let response_hash = parts.next().unwrap_or_default().to_ascii_lowercase();

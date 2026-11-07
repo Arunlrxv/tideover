@@ -77,6 +77,7 @@ export function buildRequest({ model = MODEL, systemEnvelope, evidenceEnvelope, 
       { role: "user", content: evidenceEnvelope },
     ],
     max_tokens: maxTokens,
+    temperature: 0,
     stream: false,
   });
 }
