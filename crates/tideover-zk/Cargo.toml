@@ -1,0 +1,50 @@
+[package]
+name = "tideover-zk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Anonymous membership for NEAR: prove you belong to a group, at a given level, without saying who you are"
+
+[features]
+default = ["std"]
+std = ["ark-ff/std", "ark-std/std", "ark-bls12-381/std", "ark-crypto-primitives/std"]
+# Circuit, setup and proving. Off inside the NEAR contract, which only needs hashing.
+prover = [
+    "std",
+    "ark-crypto-primitives/constraints",
+    "dep:ark-r1cs-std",
+    "dep:ark-relations",
+    "dep:ark-snark",
+    "dep:ark-groth16",
+    "ark-r1cs-std/std",
+    "ark-relations/std",
+    "ark-groth16/std",
+]
+# rayon-backed proving for native tools. Must stay off in the browser (no threads).
+parallel = ["prover", "ark-groth16/parallel", "dep:getrandom"]
+
+[dependencies]
+ark-ff.workspace = true
+ark-std.workspace = true
+ark-ec.workspace = true
+ark-serialize.workspace = true
+ark-bls12-381.workspace = true
+ark-crypto-primitives.workspace = true
+ark-r1cs-std = { workspace = true, optional = true }
+ark-relations = { workspace = true, optional = true }
+ark-snark = { workspace = true, optional = true }
+ark-groth16 = { workspace = true, optional = true }
+borsh.workspace = true
+sha2.workspace = true
+hex.workspace = true
+getrandom = { version = "0.3", optional = true }
+
+[[bin]]
+name = "gen-consts"
+path = "src/bin/gen_consts.rs"
+
+[[bin]]
+name = "tideover-setup"
+path = "src/bin/setup.rs"
+required-features = ["parallel"]

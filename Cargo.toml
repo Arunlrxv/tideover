@@ -1,0 +1,50 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/tideover-zk",
+    "crates/tideover-wasm",
+    "contracts/fund",
+    "contracts/factory",
+    "contracts/test-usd",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+near-sdk = "5.30"
+near-contract-standards = "5.30"
+
+# arkworks: all no_std-capable; `std` is enabled only in native tools and the browser prover.
+ark-ec = { version = "0.6", default-features = false }
+ark-ff = { version = "0.6", default-features = false }
+ark-std = { version = "0.6", default-features = false }
+ark-serialize = { version = "0.6", default-features = false, features = ["derive"] }
+ark-relations = { version = "0.6", default-features = false }
+ark-r1cs-std = { version = "0.6", default-features = false }
+ark-snark = { version = "0.6", default-features = false }
+ark-groth16 = { version = "0.6", default-features = false }
+ark-bls12-381 = { version = "0.6", default-features = false, features = ["curve"] }
+ark-crypto-primitives = { version = "0.6", default-features = false, features = ["sponge"] }
+
+borsh = { version = "1", features = ["derive"] }
+sha2 = { version = "0.10", default-features = false }
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+
+# Dependencies are optimised even in dev builds, so tests prove in seconds.
+[profile.dev.package."*"]
+opt-level = 3
+
+# NEAR wasm: instruction count is gas, so optimise for speed rather than size.
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+overflow-checks = true
+debug = false

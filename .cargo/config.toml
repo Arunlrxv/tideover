@@ -1,0 +1,5 @@
+# near-sdk selects its host-function code paths only when `--cfg near` is set. cargo-near sets it
+# implicitly; plain cargo needs it here. Browser wasm uses the same target, so the prover build
+# (scripts/build-wasm.ps1) overrides RUSTFLAGS.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=-s", "--cfg", "near"]
