@@ -50,6 +50,13 @@ pub fn commitment(secret: &str) -> Result<String, JsError> {
     Ok(fr_to_hex(&identity::commitment(field(secret, "secret")?)))
 }
 
+/// The leaf a dues payment adds. The contract computes this itself; it is exposed
+/// so tools can rebuild the tree offline.
+#[wasm_bindgen]
+pub fn leaf(commitment: &str, period: u64, tier: u8) -> Result<String, JsError> {
+    Ok(fr_to_hex(&identity::leaf(field(commitment, "commitment")?, period, tier)))
+}
+
 #[wasm_bindgen]
 pub fn nullifier(secret: &str, fund: &str, cycle: u64) -> Result<String, JsError> {
     let scope = identity::scope(fund, cycle);

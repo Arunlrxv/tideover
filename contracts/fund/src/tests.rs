@@ -286,7 +286,7 @@ fn verdict(id: u64, nonce: &str, assessment: &str, injection: bool) -> String {
 
 fn sealed_review(w: &World, id: U64, prompt: &str, verdict_json: &str, signer: &SigningKey) -> ReviewArgs {
     let claim = w.c.get_claim(id).unwrap();
-    let case = review::case_file(id.0, claim.amount.0, 6, &claim.nonce);
+    let case = review::case_file(id.0, claim.amount.0, 6, claim.filed_at.0, &claim.nonce);
     let eph = [11u8; 32];
     let system_envelope = seal_to_model(&format!("{prompt}{}{case}", review::CASE_SEPARATOR), eph, [12u8; 24]);
     let evidence = evidence_envelope();
@@ -831,14 +831,92 @@ fn tier_zero_never_has_cover() {
     Contract::new(dao(), token(), r, vec![], None);
 }
 
+// ---------- Golden fixtures from the browser's own code ----------
+// Written by web/scripts/make-fixtures.mjs. If either side changes, these fail.
+
+fn golden() -> Value {
+    near_sdk::serde_json::from_str(include_str!("golden.json")).unwrap()
+}
+
+#[test]
+fn a_proof_from_the_browser_prover_passes_the_contract() {
+    let g = golden();
+    let c = &g["claim"];
+    let text = |k: &str| c[k].as_str().unwrap().to_string();
+    let mut w = World::new();
+    let account = acc("rosa.testnet");
+    w.at(dao());
+    w.c.admit(account.clone(), 7, Some(text("commitment")));
+    w.at(token());
+    let _ = w.c.ft_on_transfer(account, U128(10 * USD), "dues".to_string());
+    assert_eq!(w.c.get_fund().root, text("root"), "the browser and the contract disagree on the tree");
+    let id = {
+        w.at(acc("relay.testnet"));
+        w.c.file_claim(
+            text("proof"),
+            text("root"),
+            c["period"].as_u64().unwrap(),
+            c["min_tier"].as_u64().unwrap() as u8,
+            text("nullifier"),
+            U128(text("amount").parse().unwrap()),
+            acc(&text("payout")),
+            text("evidence_sha256"),
+        )
+    };
+    assert_eq!(id.0, 0);
+}
+
+#[test]
+fn a_sealed_review_from_the_browser_code_passes_the_contract() {
+    let g = golden();
+    let r = &g["review"];
+    let text = |k: &str| r[k].as_str().unwrap();
+    set_ctx(acc("relay.testnet"), T0, 0);
+    let reviewer = review::new_reviewer(
+        text("model").to_string(),
+        text("signer"),
+        text("prompt_sha256"),
+        r["max_tokens"].as_u64().unwrap() as u32,
+    );
+    let card = review::verify(
+        &reviewer,
+        &review::Sealed {
+            signed_text: text("signed_text"),
+            signature_hex: text("signature"),
+            system_envelope: text("system_envelope"),
+            system_eph_secret_hex: text("system_eph_secret"),
+            evidence_envelope: text("evidence_envelope"),
+            response_body: text("response_body"),
+            verdict_key_hex: text("verdict_key"),
+        },
+        0,
+        text("case_file"),
+        text("nonce"),
+        text("evidence_sha256"),
+    );
+    assert_eq!(card.assessment, "supported");
+    assert_eq!(card.category, "medical");
+    assert!(card.recent && !card.injection);
+}
+
 // ---------- Display helpers ----------
 
 #[test]
 fn amounts_read_as_money_in_the_case_file() {
     assert_eq!(review::display_amount(300 * USD, 6), "300.00");
     assert_eq!(review::display_amount(12_345_000, 6), "12.34");
+    // 2026-11-07T12:00:00Z
+    let ns = 1_794_052_800 * NS_PER_SEC;
     assert_eq!(
-        review::case_file(4, 300 * USD, 6, "abcd"),
-        "{\"claim\":\"4\",\"amount\":\"300.00\",\"nonce\":\"abcd\"}"
+        review::case_file(4, 300 * USD, 6, ns, "abcd"),
+        "{\"claim\":\"4\",\"amount\":\"300.00\",\"date\":\"2026-11-07\",\"nonce\":\"abcd\"}"
     );
+}
+
+#[test]
+fn dates_land_on_the_right_day() {
+    assert_eq!(review::date_string(0), "1970-01-01");
+    assert_eq!(review::date_string(951_782_400 * NS_PER_SEC), "2000-02-29");
+    assert_eq!(review::date_string(1_767_225_600 * NS_PER_SEC), "2026-01-01");
+    assert_eq!(review::date_string(1_798_761_599 * NS_PER_SEC), "2026-12-31");
 }

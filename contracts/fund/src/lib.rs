@@ -480,12 +480,7 @@ impl Contract {
             .reviewer
             .as_ref()
             .unwrap_or_else(|| env::panic_str("The DAO has not pinned a reviewer"));
-        let case = review::case_file(
-            claim.id.0,
-            claim.amount.0,
-            self.rules.token_decimals,
-            &claim.nonce,
-        );
+        let case = self.case_file_of(&claim);
         let card = review::verify(
             reviewer,
             &review::Sealed {
@@ -790,6 +785,11 @@ impl Contract {
         self.claims.get(claim_id.0 as u32).cloned()
     }
 
+    /// The exact text the sealed reader must be given for this claim.
+    pub fn get_case_file(&self, claim_id: U64) -> String {
+        self.case_file_of(&self.claim_of(claim_id))
+    }
+
     /// Newest first.
     pub fn list_claims(&self, from_index: Option<u32>, limit: Option<u32>) -> Vec<Claim> {
         let limit = limit.unwrap_or(20).min(50) as usize;
@@ -915,6 +915,16 @@ impl Contract {
     fn set_claim(&mut self, claim: Claim) {
         let id = claim.id.0 as u32;
         self.claims.set(id, claim);
+    }
+
+    fn case_file_of(&self, claim: &Claim) -> String {
+        review::case_file(
+            claim.id.0,
+            claim.amount.0,
+            self.rules.token_decimals,
+            claim.filed_at.0,
+            &claim.nonce,
+        )
     }
 
     /// Sends a claim down the path its amount and card call for.

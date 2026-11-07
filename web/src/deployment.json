@@ -1,0 +1,13 @@
+{
+  "network": "testnet",
+  "fund": "",
+  "dao": "",
+  "token": "",
+  "factory": "",
+  "tokenSymbol": "tUSD",
+  "tokenDecimals": 6,
+  "council": [],
+  "guardians": [],
+  "seededMembers": [],
+  "transactions": {}
+}

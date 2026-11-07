@@ -67,13 +67,30 @@ pub fn new_reviewer(
     }
 }
 
-/// The case file the model must have been given. Public by design: an amount and
-/// a nonce, nothing about the person.
-pub fn case_file(claim_id: u64, amount: u128, decimals: u8, nonce: &str) -> String {
+/// The case file the model must have been given. Public by design: an amount, a
+/// date and a nonce, nothing about the person.
+pub fn case_file(claim_id: u64, amount: u128, decimals: u8, filed_at_ns: u64, nonce: &str) -> String {
     format!(
-        "{{\"claim\":\"{claim_id}\",\"amount\":\"{}\",\"nonce\":\"{nonce}\"}}",
-        display_amount(amount, decimals)
+        "{{\"claim\":\"{claim_id}\",\"amount\":\"{}\",\"date\":\"{}\",\"nonce\":\"{nonce}\"}}",
+        display_amount(amount, decimals),
+        date_string(filed_at_ns)
     )
+}
+
+/// `YYYY-MM-DD` in UTC. The model needs today's date to judge whether a document
+/// is recent. This is the civil-from-days conversion for the proleptic Gregorian
+/// calendar.
+pub fn date_string(ns: u64) -> String {
+    let z = (ns / 1_000_000_000 / 86_400) as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
 }
 
 /// `12345000` with 6 decimals becomes `12.34`. The model only needs a readable figure.
