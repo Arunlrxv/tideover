@@ -78,6 +78,11 @@ function Case({ claim }: { claim: Claim }) {
         <p className="muted">The reader did not answer, so all you have is the amount and the member&apos;s proof.</p>
       )}
       {claim.card?.injection && <div className="notice warn">The document tried to instruct the reader.</div>}
+      {claim.prior_claims > 0 && (
+        <div className="notice warn">
+          This anonymous member already claimed {usd(claim.prior_amount)} this year. You can see that without knowing who they are.
+        </div>
+      )}
       <ul className="leaves">
         {claim.panel.map((p) => {
           const voted = claim.votes.find((v) => v.member === p);

@@ -31,7 +31,7 @@ const proof = JSON.parse(
     JSON.stringify({
       secret,
       fund: FUND,
-      cycle: 0,
+      window: 0,
       tier: 2,
       period: 0,
       min_tier: 2,

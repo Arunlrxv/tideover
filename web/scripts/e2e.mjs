@@ -62,7 +62,7 @@ async function prepare(memberId, dollars, evidenceText, { payout, minTier } = {}
       JSON.stringify({
         secret: S.secrets[memberId],
         fund: FUND,
-        cycle: fund.cycle,
+        window: fund.window,
         tier: m.leaf.tier,
         period: m.leaf.period,
         min_tier: minTier ?? m.leaf.tier,

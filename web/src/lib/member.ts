@@ -114,7 +114,7 @@ export async function prepareClaim(m: LocalMember, amount: string, payout: strin
   const proof = await proveClaim({
     secret: m.secret,
     fund: D.fund,
-    cycle: fund.cycle,
+    window: fund.window,
     tier: member.leaf.tier,
     period: member.leaf.period,
     min_tier: minTier ?? lowestTierFor(fund, amount, member.leaf.tier),

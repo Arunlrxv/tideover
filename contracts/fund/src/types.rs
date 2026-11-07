@@ -8,6 +8,8 @@ pub struct Tier {
     pub min_score: u32,
     /// The most one claim can ask for at this level.
     pub cap: U128,
+    /// The most one member can receive in a window. This is what stops a repeat cheat.
+    pub year_cap: U128,
 }
 
 /// A fund's rules, set by the DAO. Amounts are in the token's smallest unit.
@@ -18,6 +20,9 @@ pub struct Rules {
     pub period_secs: u64,
     /// One claim per member per cycle.
     pub periods_per_cycle: u32,
+    /// Cycles a member's anonymous tag lasts. `Tier::year_cap` applies across this
+    /// window, and claims in it can be linked to each other but not to the member.
+    pub window_cycles: u32,
     pub tiers: Vec<Tier>,
     /// At or below this, a well-supported claim pays after the veto window.
     pub auto_limit: U128,
@@ -87,6 +92,10 @@ pub struct PanelVote {
 pub struct Claim {
     pub id: U64,
     pub cycle: u64,
+    pub window: u64,
+    /// What this anonymous member had already claimed in this window.
+    pub prior_claims: u32,
+    pub prior_amount: U128,
     pub filed_at: U64,
     pub min_tier: u8,
     pub amount: U128,
@@ -118,6 +127,16 @@ pub struct Leaf {
     pub position: u64,
     pub period: u64,
     pub tier: u8,
+}
+
+/// One anonymous member's record for one window. The key is their tag, so the
+/// contract can count their claims without learning who they are.
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug, Default)]
+pub struct TagRecord {
+    pub claims: u32,
+    pub used: u128,
+    pub last_cycle: Option<u64>,
 }
 
 #[near(serializers = [borsh])]
@@ -180,6 +199,7 @@ pub struct FundView {
     pub started_at: U64,
     pub period: u64,
     pub cycle: u64,
+    pub window: u64,
     pub members: u32,
     pub paid_up: u32,
     pub leaves: u64,

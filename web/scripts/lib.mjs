@@ -1,6 +1,5 @@
 // Shared helpers for the deployment and end-to-end scripts.
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Account, FailoverRpcProvider, JsonRpcProvider, actions, nearToYocto, teraToGas } from "near-api-js";
@@ -21,10 +20,9 @@ export const USD = 1_000_000n;
 export const near = (n) => BigInt(nearToYocto(String(n)));
 export { actions, teraToGas };
 
-/** This project's own key, created by near-cli, for this project's own account. */
-export function keyFor(accountId) {
-  const path = join(homedir(), ".near-credentials", "testnet", `${accountId}.json`);
-  return JSON.parse(readFileSync(path, "utf8")).private_key;
+/** The key of this project's own master account, made by bootstrap-account.mjs. */
+export function keyFor() {
+  return JSON.parse(readFileSync(join(ROOT, ".testnet", "funder.json"), "utf8")).key;
 }
 
 export const accountOf = (id, key = keyFor(id)) => new Account(id, provider, key);

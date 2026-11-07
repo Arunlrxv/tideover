@@ -60,6 +60,13 @@ export default function TrustPage() {
                   <td>Yes</td>
                 </tr>
                 <tr>
+                  <td>That two claims came from the same member, within a year</td>
+                  <td>Yes</td>
+                  <td>Yes</td>
+                  <td>Yes</td>
+                  <td>No</td>
+                </tr>
+                <tr>
                   <td>Amount and time</td>
                   <td>Yes</td>
                   <td>Yes</td>
@@ -116,9 +123,11 @@ export default function TrustPage() {
           <h3>Fraud is capped, not impossible</h3>
           <p>
             An AI can&apos;t reliably spot a forged document, and an anonymous cheat loses no reputation. So the rules limit the damage
-            instead: a waiting period before any cover, a limit per tier, one claim per member per quarter, and a budget per quarter.
-            The AI never holds a key. Tideover also assumes what a real mutual aid group assumes, which is that members know each
-            other: the DAO decides who joins.
+            instead: a waiting period before any cover, a limit per claim, a limit per member per year, one claim per quarter, and a
+            budget per quarter. Each member carries an anonymous tag for the year, so the contract can count their claims without
+            knowing who they are, and a second claim in a year always goes to people. The tag changes every year, so last year&apos;s
+            claims don&apos;t link to this year&apos;s. The AI never holds a key. Tideover also assumes what a real mutual aid group assumes,
+            which is that members know each other: the DAO decides who joins.
           </p>
         </div>
 

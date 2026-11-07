@@ -1,11 +1,12 @@
 // Mirrors contracts/fund/src/types.rs.
 
-export type Tier = { min_score: number; cap: string };
+export type Tier = { min_score: number; cap: string; year_cap: string };
 
 export type Rules = {
   dues: string;
   period_secs: number;
   periods_per_cycle: number;
+  window_cycles: number;
   tiers: Tier[];
   auto_limit: string;
   panel_limit: string;
@@ -44,6 +45,9 @@ export type ClaimStatus =
 export type Claim = {
   id: string;
   cycle: number;
+  window: number;
+  prior_claims: number;
+  prior_amount: string;
   filed_at: string;
   min_tier: number;
   amount: string;
@@ -94,6 +98,7 @@ export type FundView = {
   started_at: string;
   period: number;
   cycle: number;
+  window: number;
   members: number;
   paid_up: number;
   leaves: number;

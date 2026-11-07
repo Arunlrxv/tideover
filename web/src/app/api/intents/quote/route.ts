@@ -5,7 +5,7 @@ import { allow, clientIp, fail, guarded } from "@/lib/server/http";
 
 export const runtime = "nodejs";
 
-const EVM_REFUND = "0x000000000000000000000000000000000000dEaD";
+const EVM_REFUND = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
 
 const ROUTES: Record<string, { label: string; originAsset: string; refundTo: string }> = {
   solana: {
@@ -45,9 +45,11 @@ export async function GET(req: Request) {
         amount: "10000000",
         refundTo: route.refundTo,
         refundType: "ORIGIN_CHAIN",
-        recipient: "tideover-demo.near",
+        // The service checks that the recipient exists. A real fund would use its DAO.
+        recipient: "intents.near",
         recipientType: "DESTINATION_CHAIN",
         deadline: new Date(Date.now() + 3_600_000).toISOString(),
+        quoteWaitingTimeMs: 3000,
       }),
     });
     const j = await res.json();

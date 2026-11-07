@@ -68,7 +68,7 @@ export default function ClaimDetail({ params }: { params: Promise<{ id: string }
         min_tier: c.min_tier,
         nullifier: c.nullifier,
         fund: D.fund,
-        cycle: c.cycle,
+        window: c.window,
         amount: c.amount,
         payout: c.payout,
         evidence_sha256: c.evidence_sha256,
@@ -127,7 +127,8 @@ export default function ClaimDetail({ params }: { params: Promise<{ id: string }
               <ul className="checks">
                 <Check ok title="Made by a paid-up member" note={`Proved at tier ${claim.min_tier} or above, in zero knowledge. The contract verified it when the claim was filed.`} />
                 <Check ok title="Within that tier's cover" note={`${usd(claim.amount)} is within the ${usd(fund.rules.tiers[claim.min_tier].cap)} limit.`} />
-                <Check ok title="This member's only claim this cycle" note={`Nullifier ${shortHex(claim.nullifier)} had not been seen. A second claim would repeat it.`} />
+                <Check ok title="This member's only claim this quarter" note={`Their anonymous tag ${shortHex(claim.nullifier)} has no other claim this quarter.`} />
+                <Check ok title="Within their limit for the year" note={claim.prior_claims === 0 ? "Their first claim this year." : `This anonymous member already claimed ${usd(claim.prior_amount)} this year, in ${claim.prior_claims} earlier claim${claim.prior_claims === 1 ? "" : "s"}.`} />
                 <Check ok title="Inside the cycle's budget" note={`Checked against ${usd(fund.rules.cycle_budget)} per cycle.`} />
                 <Check
                   ok={Boolean(claim.card)}

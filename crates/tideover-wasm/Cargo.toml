@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "tideover-wasm"
 version.workspace = true
 edition.workspace = true

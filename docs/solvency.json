@@ -1,0 +1,113 @@
+{
+  "runs": 10000,
+  "months": 36,
+  "fund": {
+    "members": 40,
+    "dues": 10,
+    "startingReserve": 0,
+    "cycleBudget": 1500,
+    "autoLimit": 100,
+    "panelLimit": 400,
+    "tiers": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        3,
+        100,
+        200
+      ],
+      [
+        6,
+        300,
+        450
+      ],
+      [
+        12,
+        800,
+        800
+      ]
+    ]
+  },
+  "honest": {
+    "claimPerCycle": 0.05,
+    "sizes": [
+      [
+        0.55,
+        80
+      ],
+      [
+        0.33,
+        220
+      ],
+      [
+        0.12,
+        600
+      ]
+    ]
+  },
+  "catchRates": {
+    "auto": 0,
+    "panel": 0.25,
+    "council": 0.5
+  },
+  "results": [
+    {
+      "cheatShare": 0,
+      "cheats": 0,
+      "honestClaimsPaid": 0.9953649385377584,
+      "honestDollarsPaid": 0.9897330072065654,
+      "stolenPerYear": 0,
+      "stolenShareOfDues": 0,
+      "worstStolenPerYear": 0,
+      "endReserve": 10012.473,
+      "runsNearlyEmptied": 0.0199
+    },
+    {
+      "cheatShare": 0.025,
+      "cheats": 1,
+      "honestClaimsPaid": 0.9808539218853617,
+      "honestDollarsPaid": 0.9625282455056824,
+      "stolenPerYear": 731.5666666666666,
+      "stolenShareOfDues": 0.1524097222222222,
+      "worstStolenPerYear": 800,
+      "endReserve": 8041.064,
+      "runsNearlyEmptied": 0.1147
+    },
+    {
+      "cheatShare": 0.05,
+      "cheats": 2,
+      "honestClaimsPaid": 0.9648909936058311,
+      "honestDollarsPaid": 0.9338577815470382,
+      "stolenPerYear": 1418.53,
+      "stolenShareOfDues": 0.29552708333333333,
+      "worstStolenPerYear": 1600,
+      "endReserve": 6208.94,
+      "runsNearlyEmptied": 0.2529
+    },
+    {
+      "cheatShare": 0.1,
+      "cheats": 4,
+      "honestClaimsPaid": 0.9276489837304697,
+      "honestDollarsPaid": 0.8718168666317332,
+      "stolenPerYear": 2519.7683333333334,
+      "stolenShareOfDues": 0.5249517361111111,
+      "worstStolenPerYear": 3200,
+      "endReserve": 3361.756,
+      "runsNearlyEmptied": 0.5615
+    },
+    {
+      "cheatShare": 0.2,
+      "cheats": 8,
+      "honestClaimsPaid": 0.8676476688236269,
+      "honestDollarsPaid": 0.7783335257690153,
+      "stolenPerYear": 3302.7666666666664,
+      "stolenShareOfDues": 0.6880763888888889,
+      "worstStolenPerYear": 3733.3333333333335,
+      "endReserve": 1727.861,
+      "runsNearlyEmptied": 0.9152
+    }
+  ]
+}

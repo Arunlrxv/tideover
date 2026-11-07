@@ -24,7 +24,7 @@ pub use types::*;
 
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde_json::{json, Value};
-use near_sdk::store::{LookupMap, LookupSet, Vector};
+use near_sdk::store::{LookupMap, Vector};
 use near_sdk::{
     env, ext_contract, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault,
     Promise, PromiseError, PromiseOrValue,
@@ -65,7 +65,7 @@ enum StorageKey {
     Members,
     Roster,
     Leaves,
-    Nullifiers,
+    Tags,
     Claims,
 }
 
@@ -86,7 +86,7 @@ pub struct Contract {
     tree: Frontier,
     leaves: Vector<[u8; 32]>,
     recent_roots: Vec<[u8; 32]>,
-    nullifiers: LookupSet<[u8; 32]>,
+    tags: LookupMap<[u8; 32], TagRecord>,
 
     claims: Vector<Claim>,
     reviewer: Option<Reviewer>,
@@ -126,7 +126,7 @@ impl Contract {
             tree,
             leaves: Vector::new(StorageKey::Leaves),
             recent_roots,
-            nullifiers: LookupSet::new(StorageKey::Nullifiers),
+            tags: LookupMap::new(StorageKey::Tags),
             claims: Vector::new(StorageKey::Claims),
             reviewer: None,
             cycle_index: 0,
@@ -144,8 +144,9 @@ impl Contract {
         validate_rules(&rules);
         require!(
             rules.period_secs == self.rules.period_secs
-                && rules.periods_per_cycle == self.rules.periods_per_cycle,
-            "Period and cycle lengths are fixed once a fund starts"
+                && rules.periods_per_cycle == self.rules.periods_per_cycle
+                && rules.window_cycles == self.rules.window_cycles,
+            "Period, cycle and window lengths are fixed once a fund starts"
         );
         self.rules = rules;
     }
@@ -376,6 +377,7 @@ impl Contract {
             .rules
             .tiers
             .get(min_tier as usize)
+            .cloned()
             .unwrap_or_else(|| env::panic_str("Unknown tier"));
         require!(amount.0 <= tier.cap.0, "Above the cover for this tier");
 
@@ -390,15 +392,24 @@ impl Contract {
             "Unknown or stale member root"
         );
 
-        // Strict decoding: a non-canonical value could pass the nullifier check twice.
+        self.roll_cycle();
+        let cycle = self.cycle_index;
+        let window = cycle / self.rules.window_cycles as u64;
+
+        // The tag is the same for all of one member's claims in a window, and it
+        // says nothing about who they are. Strict decoding matters here: a
+        // non-canonical value would otherwise count as a different member.
         let nullifier_fr = parse_field_fr(&nullifier, "nullifier");
         let nullifier_bytes = fr_to_bytes(&nullifier_fr);
+        let record = self.tags.get(&nullifier_bytes).cloned().unwrap_or_default();
         require!(
-            !self.nullifiers.contains(&nullifier_bytes),
+            record.last_cycle != Some(cycle),
             "This member has already claimed this cycle"
         );
-
-        self.roll_cycle();
+        require!(
+            record.used + amount.0 <= tier.year_cap.0,
+            "Above this member's limit for the year"
+        );
         require!(
             self.cycle_committed + amount.0 <= self.rules.cycle_budget.0,
             "Above what is left in this cycle's budget"
@@ -406,7 +417,7 @@ impl Contract {
 
         let evidence_digest = review::unhex32(&evidence_sha256, "evidence hash");
         let fund = env::current_account_id();
-        let scope = identity::scope(fund.as_str(), self.cycle_index);
+        let scope = identity::scope(fund.as_str(), window);
         let signal = identity::signal(fund.as_str(), amount.0, payout.as_str(), &evidence_digest);
         let inputs = [
             root_bytes,
@@ -423,14 +434,24 @@ impl Contract {
             None => env::panic_str("The membership proof is malformed"),
         }
 
-        self.nullifiers.insert(nullifier_bytes);
+        self.tags.insert(
+            nullifier_bytes,
+            TagRecord {
+                claims: record.claims + 1,
+                used: record.used + amount.0,
+                last_cycle: Some(cycle),
+            },
+        );
         self.cycle_committed += amount.0;
         let id = self.claims.len() as u64;
         let nonce = hex::encode(&env::sha256(&[env::random_seed(), id.to_le_bytes().to_vec()].concat())[..16]);
         let now = env::block_timestamp();
         self.claims.push(Claim {
             id: U64(id),
-            cycle: self.cycle_index,
+            cycle,
+            window,
+            prior_claims: record.claims,
+            prior_amount: U128(record.used),
             filed_at: U64(now),
             min_tier,
             amount,
@@ -738,6 +759,7 @@ impl Contract {
             started_at: U64(self.started_at),
             period: current,
             cycle,
+            window: cycle / self.rules.window_cycles as u64,
             members,
             paid_up,
             leaves: self.tree.next_index,
@@ -834,8 +856,10 @@ impl Contract {
             .collect()
     }
 
-    pub fn is_nullifier_used(&self, nullifier: String) -> bool {
-        self.nullifiers.contains(&review::unhex32(&nullifier, "nullifier"))
+    pub fn get_tag(&self, nullifier: String) -> Option<(u32, U128)> {
+        self.tags
+            .get(&review::unhex32(&nullifier, "nullifier"))
+            .map(|t| (t.claims, U128(t.used)))
     }
 
     // ---------- Internal ----------
@@ -871,9 +895,16 @@ impl Contract {
         }
     }
 
+    /// A declined claim gives back its budget and the member's yearly allowance.
+    /// It still counts as this cycle's claim.
     fn release_budget(&mut self, claim: &Claim) {
         if claim.cycle == self.cycle_index {
             self.cycle_committed = self.cycle_committed.saturating_sub(claim.amount.0);
+        }
+        let tag = review::unhex32(&claim.nullifier, "nullifier");
+        if let Some(mut record) = self.tags.get(&tag).cloned() {
+            record.used = record.used.saturating_sub(claim.amount.0);
+            self.tags.insert(tag, record);
         }
     }
 
@@ -929,7 +960,7 @@ impl Contract {
 
     /// Sends a claim down the path its amount and card call for.
     fn route(&mut self, claim: &mut Claim) {
-        let route = route_for(&self.rules, claim.amount.0, claim.card.as_ref());
+        let route = route_for(&self.rules, claim.amount.0, claim.card.as_ref(), claim.prior_claims);
         let route = if route == Route::Panel {
             match self.draw_panel(claim.id.0) {
                 Some(panel) => {
@@ -1076,16 +1107,17 @@ impl Contract {
     }
 }
 
-/// The routing rule, in one place. Being supported is what earns the fast path;
-/// nothing the reader says can move a claim past the panel or council limits.
-pub fn route_for(rules: &Rules, amount: u128, card: Option<&Card>) -> Route {
+/// The routing rule, in one place. Being supported is what earns the fast path, and
+/// only a first claim in the year can take it. Nothing the reader says can move a
+/// claim past the panel or council limits.
+pub fn route_for(rules: &Rules, amount: u128, card: Option<&Card>, prior_claims: u32) -> Route {
     if amount > rules.panel_limit.0 {
         return Route::Council;
     }
     let well_supported = card.is_some_and(|c| {
         c.assessment == "supported" && c.recent && c.amount_matches == "yes" && !c.injection
     });
-    if well_supported && amount <= rules.auto_limit.0 {
+    if well_supported && prior_claims == 0 && amount <= rules.auto_limit.0 {
         Route::Auto
     } else {
         Route::Panel
@@ -1122,6 +1154,7 @@ fn validate_rules(rules: &Rules) {
     require!(rules.dues.0 > 0, "Dues must be greater than zero");
     require!(rules.period_secs >= 60, "A period must be at least a minute");
     require!(rules.periods_per_cycle >= 1, "A cycle needs at least one period");
+    require!(rules.window_cycles >= 1, "A window needs at least one cycle");
     require!(
         !rules.tiers.is_empty() && rules.tiers.len() <= MAX_TIERS,
         "A fund needs between 1 and 16 tiers"
@@ -1133,6 +1166,10 @@ fn validate_rules(rules: &Rules) {
             .windows(2)
             .all(|w| w[0].min_score < w[1].min_score && w[0].cap.0 <= w[1].cap.0),
         "Tiers must rise in both score and cover"
+    );
+    require!(
+        rules.tiers.iter().all(|t| t.year_cap.0 >= t.cap.0),
+        "A yearly limit cannot be below the limit for one claim"
     );
     require!(
         rules.auto_limit.0 <= rules.panel_limit.0,

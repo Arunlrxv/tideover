@@ -52,11 +52,12 @@ fn rules() -> Rules {
         dues: U128(10 * USD),
         period_secs: PERIOD,
         periods_per_cycle: 3,
+        window_cycles: 4,
         tiers: vec![
-            Tier { min_score: 0, cap: U128(0) },
-            Tier { min_score: 3, cap: U128(100 * USD) },
-            Tier { min_score: 6, cap: U128(300 * USD) },
-            Tier { min_score: 12, cap: U128(800 * USD) },
+            Tier { min_score: 0, cap: U128(0), year_cap: U128(0) },
+            Tier { min_score: 3, cap: U128(100 * USD), year_cap: U128(200 * USD) },
+            Tier { min_score: 6, cap: U128(300 * USD), year_cap: U128(450 * USD) },
+            Tier { min_score: 12, cap: U128(800 * USD), year_cap: U128(800 * USD) },
         ],
         auto_limit: U128(100 * USD),
         panel_limit: U128(400 * USD),
@@ -129,8 +130,8 @@ impl World {
             .collect()
     }
 
-    fn scope(&self, cycle: u64) -> Fr {
-        identity::scope(fund().as_str(), cycle)
+    fn scope(&self, window: u64) -> Fr {
+        identity::scope(fund().as_str(), window)
     }
 }
 
@@ -154,14 +155,14 @@ fn prove(w: &World, p: &Person, min_tier: u8, amount: u128, payout: &AccountId) 
     let leaf = m.leaf.unwrap();
     let evidence = evidence_hash();
     let digest = review::unhex32(&evidence, "evidence");
-    let cycle = w.c.get_fund().cycle;
+    let window = w.c.get_fund().window;
     let signal = identity::signal(fund().as_str(), amount, payout.as_str(), &digest);
     let circuit = MembershipCircuit::from_leaves(
         p.secret,
         leaf.tier,
         leaf.period,
         min_tier,
-        w.scope(cycle),
+        w.scope(window),
         signal,
         &w.leaves(),
         leaf.position,
@@ -445,6 +446,72 @@ fn a_new_cycle_allows_a_new_claim() {
 }
 
 #[test]
+#[should_panic(expected = "limit for the year")]
+fn a_repeat_cheat_hits_the_yearly_limit() {
+    let (mut w, amara, _) = filed_claim(300 * USD);
+    w.now += PERIOD * 3 + 1;
+    w.pay(&amara);
+    // $300 this year already, with $150 left of the $450 limit.
+    let second = prove(&w, &amara, 2, 160 * USD, &payout());
+    file(&mut w, second);
+}
+
+#[test]
+fn the_contract_counts_an_anonymous_members_claims_without_knowing_who() {
+    let (mut w, amara, first) = filed_claim(100 * USD);
+    assert_eq!(w.c.get_claim(first).unwrap().prior_claims, 0);
+    w.now += PERIOD * 3 + 1;
+    w.pay(&amara);
+    let second = prove(&w, &amara, 1, 50 * USD, &payout());
+    let id = file(&mut w, second);
+    let c = w.c.get_claim(id).unwrap();
+    assert_eq!((c.prior_claims, c.prior_amount.0), (1, 100 * USD));
+}
+
+#[test]
+fn a_second_claim_in_a_year_never_takes_the_fast_path() {
+    let (mut w, amara, _) = filed_claim(100 * USD);
+    w.now += PERIOD * 3 + 1;
+    w.pay(&amara);
+    for (i, name) in ["ben", "chi", "dara", "eli"].iter().enumerate() {
+        w.pay(&person(name, 10 + i as u64));
+    }
+    let second = prove(&w, &amara, 1, 50 * USD, &payout());
+    let id = file(&mut w, second);
+    pin_reviewer(&mut w, PROMPT);
+    let nonce = w.c.get_claim(id).unwrap().nonce;
+    let r = sealed_review(&w, id, PROMPT, &verdict(id.0, &nonce, "supported", false), &model_key());
+    post(&mut w, id, r);
+    assert_eq!(w.c.get_claim(id).unwrap().route, Some(Route::Panel));
+}
+
+#[test]
+fn a_new_year_gives_a_new_tag_and_a_new_allowance() {
+    let (mut w, amara, first) = filed_claim(300 * USD);
+    let tag = w.c.get_claim(first).unwrap().nullifier;
+    w.now += PERIOD * 12 + 1;
+    // The 12-month gap halves her record, so this claim proves the lower tier.
+    w.pay(&amara);
+    let next = prove(&w, &amara, 1, 100 * USD, &payout());
+    let id = file(&mut w, next);
+    let c = w.c.get_claim(id).unwrap();
+    assert_eq!(c.prior_claims, 0);
+    assert_ne!(c.nullifier, tag, "last year's claims must not link to this year's");
+}
+
+#[test]
+fn a_declined_claim_gives_back_the_yearly_allowance() {
+    let (mut w, id) = reviewed(250 * USD, "unclear", false);
+    let tag = w.c.get_claim(id).unwrap().nullifier;
+    let panel = panel_of(&w, id);
+    for voter in &panel[..2] {
+        w.at(voter.clone());
+        w.c.panel_vote(id, false);
+    }
+    assert_eq!(w.c.get_tag(tag), Some((1, U128(0))));
+}
+
+#[test]
 #[should_panic(expected = "Above the cover")]
 fn a_claim_cannot_exceed_the_proven_tier() {
     let (mut w, amara) = world_with_members();
@@ -583,10 +650,11 @@ fn large_amounts_always_reach_the_council_whatever_the_card_says() {
         injection: false,
         assessment: "supported".to_string(),
     };
-    assert_eq!(route_for(&r, 401 * USD, Some(&card)), Route::Council);
-    assert_eq!(route_for(&r, 400 * USD, Some(&card)), Route::Panel);
-    assert_eq!(route_for(&r, 100 * USD, Some(&card)), Route::Auto);
-    assert_eq!(route_for(&r, 100 * USD, None), Route::Panel);
+    assert_eq!(route_for(&r, 401 * USD, Some(&card), 0), Route::Council);
+    assert_eq!(route_for(&r, 400 * USD, Some(&card), 0), Route::Panel);
+    assert_eq!(route_for(&r, 100 * USD, Some(&card), 0), Route::Auto);
+    assert_eq!(route_for(&r, 100 * USD, None, 0), Route::Panel);
+    assert_eq!(route_for(&r, 100 * USD, Some(&card), 1), Route::Panel, "a second claim always reaches people");
 }
 
 #[test]
@@ -810,6 +878,15 @@ fn a_guardian_can_pause_but_not_resume() {
     w.at(guardian());
     w.c.pause();
     w.c.resume();
+}
+
+#[test]
+#[should_panic(expected = "yearly limit cannot be below")]
+fn a_yearly_limit_must_cover_at_least_one_claim() {
+    let mut r = rules();
+    r.tiers[2].year_cap = U128(USD);
+    set_ctx(dao(), T0, 0);
+    Contract::new(dao(), token(), r, vec![], None);
 }
 
 #[test]

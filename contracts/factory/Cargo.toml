@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "tideover-factory"
 version.workspace = true
 edition.workspace = true

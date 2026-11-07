@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "tideover-test-usd"
 version.workspace = true
 edition.workspace = true

@@ -3,10 +3,12 @@
 //! - `commitment = H(ID, secret)`, public, registered once by the member.
 //! - `leaf = H(LEAF, commitment, period, tier)`, added when dues are paid.
 //! - `nullifier = H(NULL, secret, scope)`, published with a claim.
-//! - `scope = H(SCOPE, group, cycle)`, one per group and claim cycle.
+//! - `scope = H(SCOPE, group, window)`, one per group and time window.
 //!
 //! Without the secret, a nullifier cannot be linked to a commitment. With the
-//! same secret and scope it always repeats, which stops a second claim.
+//! same secret and scope it always repeats. A contract can use that to stop a
+//! second use outright, or, as Tideover does, as an anonymous tag: one member's
+//! claims in a window share a tag, so limits can be counted without a name.
 
 use crate::{encoding::bytes_to_fr, poseidon::hash, Fr};
 
@@ -32,11 +34,11 @@ pub fn nullifier(secret: Fr, scope: Fr) -> Fr {
     hash(&[Fr::from(DOM_NULL), secret, scope])
 }
 
-pub fn scope(group: &str, cycle: u64) -> Fr {
+pub fn scope(group: &str, window: u64) -> Fr {
     hash(&[
         Fr::from(DOM_SCOPE),
         bytes_to_fr(group.as_bytes()),
-        Fr::from(cycle),
+        Fr::from(window),
     ])
 }
 

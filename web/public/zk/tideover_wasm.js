@@ -109,14 +109,14 @@ export function new_secret(seed) {
 /**
  * @param {string} secret
  * @param {string} fund
- * @param {bigint} cycle
+ * @param {bigint} window
  * @returns {string}
  */
-export function nullifier(secret, fund, cycle) {
+export function nullifier(secret, fund, window) {
     let deferred5_0;
     let deferred5_1;
     try {
-        const val3 = BigInt.asIntN(64, cycle);
+        const val3 = BigInt.asIntN(64, window);
         let ptr0, len0, ptr1, len1;
         try {
             ptr0 = passStringToWasm0(secret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);

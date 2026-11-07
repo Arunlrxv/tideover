@@ -23,8 +23,8 @@ const handlers = {
   async commitment({ secret }) {
     return commitment(secret);
   },
-  async nullifier({ secret, fund, cycle }) {
-    return nullifier(secret, fund, BigInt(cycle));
+  async nullifier({ secret, fund, window }) {
+    return nullifier(secret, fund, BigInt(window));
   },
   async prove({ request }) {
     provingKey ??= await fetchBytes("membership.pk");

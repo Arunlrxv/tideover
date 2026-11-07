@@ -58,8 +58,8 @@ pub fn leaf(commitment: &str, period: u64, tier: u8) -> Result<String, JsError> 
 }
 
 #[wasm_bindgen]
-pub fn nullifier(secret: &str, fund: &str, cycle: u64) -> Result<String, JsError> {
-    let scope = identity::scope(fund, cycle);
+pub fn nullifier(secret: &str, fund: &str, window: u64) -> Result<String, JsError> {
+    let scope = identity::scope(fund, window);
     Ok(fr_to_hex(&identity::nullifier(field(secret, "secret")?, scope)))
 }
 
@@ -67,7 +67,7 @@ pub fn nullifier(secret: &str, fund: &str, cycle: u64) -> Result<String, JsError
 struct ClaimRequest {
     secret: String,
     fund: String,
-    cycle: u64,
+    window: u64,
     tier: u8,
     period: u64,
     min_tier: u8,
@@ -109,7 +109,7 @@ pub fn prove_claim(pk: &[u8], request: &str, seed: &[u8]) -> Result<String, JsEr
         .map_err(err)?
         .try_into()
         .map_err(|_| err("evidence hash must be 32 bytes"))?;
-    let scope = identity::scope(&r.fund, r.cycle);
+    let scope = identity::scope(&r.fund, r.window);
     let signal = identity::signal(&r.fund, amount, &r.payout, &evidence);
     let circuit = MembershipCircuit::from_leaves(
         secret, r.tier, r.period, r.min_tier, scope, signal, &leaves, r.position,
@@ -135,7 +135,7 @@ struct AuditRequest {
     min_tier: u8,
     nullifier: String,
     fund: String,
-    cycle: u64,
+    window: u64,
     amount: String,
     payout: String,
     evidence_sha256: String,
@@ -156,7 +156,7 @@ pub fn audit_claim(vk: &[u8], request: &str) -> Result<bool, JsError> {
         root: field(&r.root, "root")?,
         period: r.period,
         min_tier: r.min_tier,
-        scope: identity::scope(&r.fund, r.cycle),
+        scope: identity::scope(&r.fund, r.window),
         nullifier: field(&r.nullifier, "nullifier")?,
         signal: identity::signal(&r.fund, amount, &r.payout, &evidence),
     };

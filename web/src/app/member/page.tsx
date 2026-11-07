@@ -183,7 +183,7 @@ export default function MemberPage() {
   );
 }
 
-function TierLadder({ score, tiers }: { score: number; tiers: { min_score: number; cap: string }[] }) {
+function TierLadder({ score, tiers }: { score: number; tiers: { min_score: number; cap: string; year_cap: string }[] }) {
   return (
     <div className="card">
       <h3>How cover grows</h3>
@@ -193,7 +193,8 @@ function TierLadder({ score, tiers }: { score: number; tiers: { min_score: numbe
           <thead>
             <tr>
               <th>Points</th>
-              <th>Cover per claim</th>
+              <th>Per claim</th>
+              <th>Per year</th>
               <th />
             </tr>
           </thead>
@@ -202,6 +203,7 @@ function TierLadder({ score, tiers }: { score: number; tiers: { min_score: numbe
               <tr key={t.min_score}>
                 <td>{t.min_score}+</td>
                 <td>{i === 0 ? "Waiting period" : usd(t.cap)}</td>
+                <td>{i === 0 ? "–" : usd(t.year_cap)}</td>
                 <td>{score >= t.min_score && (i === tiers.length - 1 || score < tiers[i + 1].min_score) ? <span className="chip good">You</span> : null}</td>
               </tr>
             ))}
