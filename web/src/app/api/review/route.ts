@@ -12,6 +12,23 @@ export const maxDuration = 120;
 
 const reviewed = new Set<string>();
 
+// Each review spends real credit, so visitors to a public demo can't drain the balance.
+// This counts per server instance, which is enough to stop a run on the account.
+const MAX_REVIEWS_PER_DAY = Number(process.env.TIDEOVER_MAX_REVIEWS_PER_DAY ?? 40);
+let today = "";
+let usedToday = 0;
+
+function spendOne() {
+  const date = new Date().toISOString().slice(0, 10);
+  if (date !== today) {
+    today = date;
+    usedToday = 0;
+  }
+  if (usedToday >= MAX_REVIEWS_PER_DAY) return false;
+  usedToday += 1;
+  return true;
+}
+
 export async function GET() {
   return NextResponse.json({ mode: clerkMode() });
 }
@@ -30,6 +47,7 @@ export async function POST(req: Request) {
     if (!fund.reviewer) return fail("The DAO has not pinned a clerk", 409);
     if (sha256hex(envelope) !== claim.evidence_sha256) return fail("This is not the document the claim committed to", 409);
     if (reviewed.has(claimId)) return fail("This claim has already been sent to the reader", 409);
+    if (!spendOne()) return fail("The sealed reader has used today's budget. The claim will go to people.", 503, { readerOff: true });
 
     reviewed.add(claimId);
     try {

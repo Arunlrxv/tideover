@@ -29,7 +29,7 @@ cd web && node scripts/deploy.mjs
 
 This writes `web/src/deployment.json`, which is public, and `web/.env.local`, which holds keys and is ignored by git.
 
-Run the real flow. With `NEAR_AI_API_KEY` set, the model reads each document. Without it, a fixed test card proves everything on chain except the model, and the report says which it was:
+Run the real flow. A fixed test card proves everything on chain except the model, so this spends no credits, and the report says which it was. Add `-- --model` to have the real model read each document, which is two requests for a full run:
 
 ```bash
 cd web && npm run e2e
@@ -78,7 +78,7 @@ Open `http://localhost:3000/harbor-mutual.sputnikv2.testnet/requests`. A claim t
 
 ## Hosting
 
-The app is a standard Next.js project. Deploy `web/` to any host and set the variables from `web/.env.example`. All keys are testnet keys, and the demo key can only vote.
+The app is a standard Next.js project. Deploy `web/` to any host and set the variables from `web/.env.example`. All keys are testnet keys, and the demo key can only vote. Reviews stop at `TIDEOVER_MAX_REVIEWS_PER_DAY`, 40 by default, and claims then go to people, so visitors can't drain the NEAR AI balance.
 
 ## After changing the clerk or its prompt
 

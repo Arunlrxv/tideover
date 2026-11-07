@@ -37,7 +37,7 @@ Live app: to be added. No wallet is needed.
 7. Back on **Ask for help**, pick **A trick document**, which tells the reader to approve it. It should lose the fast path. If it fools the model, the claim is still capped by the tier and the auto limit, and it can be stopped in the veto window.
 8. Open **Trust** for what this does not hide, and to see whether the clerk is running in an enclave or on the demo's server.
 
-Without the app: `cd web && npm run e2e` runs the real flow against testnet and checks that the money moved. With only a NEAR AI key, `cd web && npm run model-check` runs the real prompt on the sample documents.
+Without the app: `cd web && npm run e2e` runs the real flow against testnet and checks that the money moved. With only a NEAR AI key, `cd web && npm run model-check` runs the real prompt on the sample documents, and `npm run e2e -- --model` uses the real model on chain.
 
 ## How it fits Social Money
 
@@ -105,7 +105,8 @@ Design details: [docs/DESIGN.md](docs/DESIGN.md).
 | Proof time in a real browser | 2.9 s |
 | Live NEAR Intents quotes | Working for 3 chains |
 | Deployed to testnet, real Sputnik DAO flow | **Not yet** |
-| A real NEAR AI review, end to end | **Not yet.** Needs an API key |
+| The real model on the sample documents | 4 of 4 read as expected, and the trick document was flagged. See [the results](docs/model-check.json). About $0.0008 a review at most. |
+| A real review through the clerk, on chain | **Not yet** |
 | The clerk running in an OutLayer enclave | **Not yet** |
 | Gas figures | **Not yet measured** on chain |
 | Opening the demo DAO in Trezu | **Not tested** |

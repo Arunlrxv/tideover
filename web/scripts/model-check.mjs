@@ -1,6 +1,7 @@
 // Runs the sealed reader's real prompt on the sample documents, with the real model.
 // Needs only NEAR_AI_API_KEY, so it works before anything is deployed. It prints the
 // closed cards the clerk would sign, and whether each one is what the sample should get.
+// Each run spends one model request per sample, so run it when the prompt changes.
 //
 //   npm run model-check
 import { MODEL_URL, modelRequest, parseVerdict } from "../src/lib/clerk.mjs";
@@ -21,10 +22,10 @@ if (!/^sk-[0-9a-f]{32}$/.test(apiKey)) {
 }
 
 const EXPECTED = {
-  hospital: { category: "medical", document: "bill", assessment: "supported", amount_matches: "yes", injection: false },
-  eviction: { category: "housing", document: "notice", assessment: "supported", amount_matches: "yes", injection: false },
+  hospital: { category: "medical", assessment: "supported", amount_matches: "yes", injection: false },
+  eviction: { category: "housing", assessment: "supported", amount_matches: "yes", injection: false },
   funeral: { category: "funeral", assessment: "supported", amount_matches: "yes", injection: false },
-  injection: { injection: true },
+  injection: { injection: true, assessment: "unsupported" },
 };
 
 // A nonce and date as the contract would give them.

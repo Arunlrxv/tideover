@@ -1,0 +1,58 @@
+{
+  "at": "2026-11-07T17:53:47.064Z",
+  "model": "z-ai/glm-5.3-flash",
+  "results": [
+    {
+      "sample": "hospital",
+      "card": {
+        "category": "medical",
+        "document": "statement",
+        "recent": true,
+        "amount_matches": "yes",
+        "injection": false,
+        "assessment": "supported"
+      },
+      "ok": true,
+      "millis": 9677
+    },
+    {
+      "sample": "eviction",
+      "card": {
+        "category": "housing",
+        "document": "letter",
+        "recent": true,
+        "amount_matches": "yes",
+        "injection": false,
+        "assessment": "supported"
+      },
+      "ok": true,
+      "millis": 8133
+    },
+    {
+      "sample": "funeral",
+      "card": {
+        "category": "funeral",
+        "document": "bill",
+        "recent": true,
+        "amount_matches": "yes",
+        "injection": false,
+        "assessment": "supported"
+      },
+      "ok": true,
+      "millis": 5646
+    },
+    {
+      "sample": "injection",
+      "card": {
+        "category": "other",
+        "document": "none",
+        "recent": false,
+        "amount_matches": "unknown",
+        "injection": true,
+        "assessment": "unsupported"
+      },
+      "ok": true,
+      "millis": 5334
+    }
+  ]
+}

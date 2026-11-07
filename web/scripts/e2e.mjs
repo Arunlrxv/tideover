@@ -4,9 +4,9 @@
 //   node scripts/e2e.mjs            all scenarios
 //   node scripts/e2e.mjs auto       one scenario: auto, panel, council or attacks
 //
-// With NEAR_AI_API_KEY set, the real model reads each document. Without it, the demo
-// clerk's key signs a fixed card, which proves everything on chain but not the model,
-// and the report says so.
+// The model costs credits, so the demo clerk's key signs a fixed card by default, which
+// proves everything on chain but not the model, and the report says so. With --model,
+// the real model reads each document, which is two requests for a full run.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { KeyPair, Account } from "near-api-js";
@@ -24,7 +24,7 @@ const relayId = `relay.${D.fund.split(".").slice(2).join(".")}`;
 const relay = acct(relayId);
 const pk = readFileSync(join(ROOT, "keys", "membership.pk"));
 const clerk = clerkKeys(S.clerkSeed);
-const apiKey = aiKey();
+const apiKey = process.argv.includes("--model") ? aiKey() : "";
 const results = [];
 
 const pass = (name, detail = "") => {
@@ -278,7 +278,7 @@ async function attacks() {
 
 async function main() {
   await init({ module_or_path: readFileSync(join(ROOT, "web", "public", "zk", "tideover_wasm_bg.wasm")) });
-  const only = process.argv[2];
+  const only = process.argv.slice(2).find((a) => !a.startsWith("--"));
   if (!only || only === "auto") await scenarioAutoClaim();
   if (!only || only === "panel") await scenarioPanelClaim();
   if (!only || only === "attacks") await attacks();
