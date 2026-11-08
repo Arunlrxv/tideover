@@ -111,7 +111,7 @@ Design details: [docs/DESIGN.md](docs/DESIGN.md).
 | The clerk running in an OutLayer enclave | Done. The DAO pinned the build, and the Trust page compares it with OutLayer's record. See [the results](docs/TESTNET.md). |
 | Checking the enclave's Intel quote with `outlayer-verify` | **Not run** |
 | Gas on chain | Filing a claim 24.4 Tgas, posting a card up to 3.8 Tgas, paying dues 45.8 Tgas |
-| The factory on testnet | **Not deployed.** The demo fund was created directly to save test NEAR |
+| The factory on testnet | Deployed, with the same code as the demo fund. No fund has been created through it yet, because that locks 4.74 test NEAR |
 | Opening the demo DAO in Trezu | **Not tested** |
 | Trezu templates in Trezu | **Not tested.** Checked by reading its parser, not by running it |
 

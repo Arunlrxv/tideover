@@ -9,8 +9,9 @@ Everything here ran for real on 8 November 2026. All accounts and transactions c
 | DAO, a real Sputnik DAO that holds the money | [`harbor-mutual.sputnikv2.testnet`](https://testnet.nearblocks.io/address/harbor-mutual.sputnikv2.testnet) |
 | Fund contract, with no access keys | [`harbor.funds.tideover-hq.testnet`](https://testnet.nearblocks.io/address/harbor.funds.tideover-hq.testnet) |
 | Test dollars | [`usd.tideover-hq.testnet`](https://testnet.nearblocks.io/address/usd.tideover-hq.testnet) |
+| Factory, which creates a fund for any DAO | [`funds.tideover-hq.testnet`](https://testnet.nearblocks.io/address/funds.tideover-hq.testnet) |
 
-The whole deployment cost about 11.6 test NEAR, nearly all of it locked as contract storage.
+The demo community cost about 11.6 test NEAR, nearly all of it locked as contract storage. The factory locks another 4.9.
 
 ## Claims paid through the DAO
 
@@ -57,6 +58,12 @@ OutLayer's public record names that build for both runs. The Trust page compares
 
 Ten attacks were refused, and the honest version of the same claim was accepted. All 11 checks are in [e2e-testnet-attacks.json](e2e-testnet-attacks.json). The attacks were: raising the amount past the cover, changing it within the cover, redirecting the payout, paying the DAO itself, a made-up member list, claiming twice in a cycle, a stranger voting on a panel, a forged card, pinning a clerk without the DAO, and the relay voting on the DAO's proposals.
 
+## The factory
+
+The factory is deployed ([`65WoVRij…`](https://testnet.nearblocks.io/txns/65WoVRij4udtzqGNcSyWJEmSKyGXuFcb2unq4dJp2m7r)) and holds the fund code ([`9pLsAoNf…`](https://testnet.nearblocks.io/txns/9pLsAoNfs6BrsM6CmF7qRNhsPT1FLLygja9Wg1NWin6W)). That code has the same sha256 as the live demo fund, `4EBc1Gf3mX5LjVKb5wojMh7c1ikBA92AowQpMa2JrNJY`.
+
+It refused a caller creating a fund for someone else's DAO, and a deposit below the 4.74 NEAR a new fund needs. The Install page reads that price from it.
+
 ## Gas
 
 | Action | Gas |
@@ -70,5 +77,5 @@ At testnet's gas price, 1 Tgas costs 0.0001 NEAR.
 ## What has not been done on chain
 
 - **Checking the enclave's Intel quote directly.** The Trust page reads OutLayer's public record of each run. `outlayer-verify tx <hash>` checks the quote behind it, and it has not been run.
-- **The factory.** The demo fund was created directly, to save test NEAR, the way the factory does it. The factory's tests pass, but it isn't deployed, so the Install page can't run its proposals yet.
+- **A fund created through the factory.** That locks 4.74 test NEAR, so the demo fund was created directly instead: same account name, same code, no keys, and the same 30 Tgas for its setup.
 - **Trezu.** The demo DAO has not been opened in Trezu.

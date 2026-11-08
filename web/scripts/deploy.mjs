@@ -418,13 +418,25 @@ async function main() {
 
   if (process.argv[2] === "factory") {
     await step("factory", async () => {
-      const needed = storageNear("tideover_factory.wasm", "tideover_fund.wasm") + 0.1;
-      outcome(await master.signAndSendTransaction({ receiverId: FACTORY, actions: [actions.transfer(near(needed))], throwOnFailure: false }));
-      await deployAndInit(FACTORY, "tideover_factory.wasm", "new", { owner: FACTORY });
-      await acct(FACTORY).signAndSendTransaction({
-        receiverId: FACTORY,
-        actions: [actions.functionCall("set_code", wasm("tideover_fund.wasm"), teraToGas(100), 0n)],
-      });
+      // A rerun after a dropped connection tops up only what is missing and does not redeploy.
+      const needed = near(storageNear("tideover_factory.wasm", "tideover_fund.wasm") + 0.1);
+      const held = BigInt((await provider.viewAccount({ accountId: FACTORY })).amount);
+      if (held < needed) {
+        outcome(await master.signAndSendTransaction({ receiverId: FACTORY, actions: [actions.transfer(needed - held)], throwOnFailure: false }));
+      }
+      if ((await view(FACTORY, "required_deposit").catch(() => null)) === null) {
+        S.txs["Deploy the factory"] = (await deployAndInit(FACTORY, "tideover_factory.wasm", "new", { owner: FACTORY })).hash;
+      }
+      // The call holds its gas while the code is stored, so less gas leaves more for storage.
+      const set = outcome(
+        await acct(FACTORY).signAndSendTransaction({
+          receiverId: FACTORY,
+          actions: [actions.functionCall("set_code", wasm("tideover_fund.wasm"), teraToGas(50), 0n)],
+          throwOnFailure: false,
+        }),
+      );
+      S.txs["Store the fund code in the factory"] = set.hash;
+      log(" ", set.logs.join(" "));
       log("  a new fund needs", (await view(FACTORY, "required_deposit")).toString(), "yoctoNEAR");
     });
     writeOutputs();

@@ -77,7 +77,7 @@ export default function InstallPage() {
     return { create, everyday: fundTemplates(fundAccount(name || "my-community")) };
   }, [check, dues, name, midSize]);
 
-  const depositNear = check ? (Number(BigInt(check.deposit) / 10n ** 21n) / 1000).toFixed(2) : "about 6.6";
+  const depositNear = check ? (Number(BigInt(check.deposit) / 10n ** 21n) / 1000).toFixed(2) : "about 4.7";
 
   return (
     <div className="page">
