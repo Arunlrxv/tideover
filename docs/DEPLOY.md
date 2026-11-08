@@ -60,11 +60,13 @@ cd web && node scripts/deploy.mjs enclave
 That script does four things, as the relay:
 
 1. Publishes the build on FastFS.
-2. Stores its secrets against the build's sha256. The seed is generated in the keystore's enclave, so nobody ever sees it, and only the relay can run the build with it.
+2. Stores its secrets against the build's sha256. Your `NEAR_AI_API_KEY` leaves your machine only encrypted to the keystore's enclave. The seed is generated in that enclave, so nobody ever sees it, and only the relay can run the build with it.
 3. Runs the build once to read its public keys, and checks it carries this repository's prompt.
 4. Pins the keys and the build hash through a DAO vote, and rewrites `web/.env.local`. The server no longer holds a seed after this.
 
-Each review then pays for one OutLayer run from the relay's NEAR.
+Each review then pays for one OutLayer run from the relay's NEAR, about 0.002. The relay needs about 0.35 NEAR free at that moment, because the call holds its gas up front.
+
+`scripts/e2e.mjs` signs cards with the server clerk's key, so it only works before this step. Once an enclave build is pinned, only the enclave can sign a card the contract accepts.
 
 ## Open the demo DAO in Trezu
 

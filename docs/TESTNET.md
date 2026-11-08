@@ -19,9 +19,10 @@ The whole deployment cost about 11.6 test NEAR, nearly all of it locked as contr
 | #0 | $85 | Automatic, after a veto window | Paid by DAO proposal #2 |
 | #1 | $250 | Three random members, two approved | Paid by DAO proposal #3 |
 | #3 | $600 | Normal DAO proposal, council vote | Paid by DAO proposal #4 |
-| #4 | $85 | Automatic, filed through the real app, read by the real model | Paid by DAO proposal #5 |
+| #4 | $85 | Automatic, filed through the real app, read by the real model, with the clerk on the demo's server | Paid by DAO proposal #5 |
+| #5 | $85 | The same, with the clerk in OutLayer's enclave | Paid by DAO proposal #7 |
 
-Each payout's token balance was checked after payment. The drop in the DAO's balance was also checked for #0 and #3. Claim #2 ($50) is the honest claim from the attack run below, and it never got a card.
+Each payout's token balance was checked after payment. The drop in the DAO's balance was also checked for #0, #3 and #5. Claim #2 ($50) is the honest claim from the attack run below, and it never got a card.
 
 Claim #4 is the full path: a new member joined from the browser with no wallet, paid dues with no gas, proved membership in the browser in 2.8 seconds, and filed through the relay. The real model then read the sealed document, and the contract checked the clerk's signature on the card. The page's own re-check then confirmed the proof and the signature in the browser.
 
@@ -34,6 +35,23 @@ Claims #0 and #1 used a fixed test card, signed with the demo clerk's key, to av
 | Claim #1 filed | [`7zXE4FSA…`](https://testnet.nearblocks.io/txns/7zXE4FSALLDH4xtdUS3bPZyUVY2J6qMxzvaT47utDkr3) |
 | Claim #1 card posted | [`FLY2SPrZ…`](https://testnet.nearblocks.io/txns/FLY2SPrZK433e7k3LAF8LF8VgivZXAGnzBKaRCALxpXx) |
 | Claim #1 confirmed paid | [`9iXQ7KYw…`](https://testnet.nearblocks.io/txns/9iXQ7KYwetY8rwuy726n1Hw9oC5TydM5QKB4yEFYhh5V) |
+
+## The clerk in an enclave
+
+The DAO voted to pin the clerk's enclave build (proposal #6), and the demo's server no longer holds a clerk key.
+
+Claim #5 then took the same path as claim #4. A new member joined in the browser, proved membership in 2.4 seconds and filed a sealed hospital bill. The clerk opened it inside [OutLayer](https://outlayer.ai)'s enclave, read it with the NEAR AI model and signed the card. The contract accepted that signature, and the page's own re-check confirmed it in the browser. The enclave run took about 10 seconds and cost 0.002 NEAR.
+
+| What | Value |
+|---|---|
+| Build, sha256 | `410b38192e64034b45291cc204eaa3188d11ee525f02db528d9884713919fe2d` |
+| Enclave run that printed the clerk's keys | [`7759njmD…`](https://testnet.nearblocks.io/txns/7759njmDNzD3wCiDitgLXjrms5NEiqGBi5UujogBrro6) |
+| Claim #5 filed | [`BvJ31i4o…`](https://testnet.nearblocks.io/txns/BvJ31i4orS7K5fQ8z5RkyWtV3khwokSUeVWav43S4YXn) |
+| Enclave run that read claim #5 | [`A9ZYpuEb…`](https://testnet.nearblocks.io/txns/A9ZYpuEbX2M16xKi1q6M4HZ4BZwGMd2VpCuDEW6gSXdg) |
+| Claim #5 card posted | [`9BSekkmZ…`](https://testnet.nearblocks.io/txns/9BSekkmZpj3VEJaFsMKavRsCTBxRrjQmUsp6jvGKMTdM) |
+| Claim #5 confirmed paid | [`JDvGhW47…`](https://testnet.nearblocks.io/txns/JDvGhW47sYXVuhzkWHg2bWM1EGYq5JyUyraCfKfhznCQ) |
+
+OutLayer's public record names that build for both runs. The Trust page compares it with what the DAO pinned, and shows **In an enclave, attested**.
 
 ## Attacks the live contract refused
 
@@ -51,6 +69,6 @@ At testnet's gas price, 1 Tgas costs 0.0001 NEAR.
 
 ## What has not been done on chain
 
-- **The enclave clerk.** The clerk that read claim #4 ran on the demo's server, and the Trust page says so.
+- **Checking the enclave's Intel quote directly.** The Trust page reads OutLayer's public record of each run. `outlayer-verify tx <hash>` checks the quote behind it, and it has not been run.
 - **The factory.** The demo fund was created directly, to save test NEAR, the way the factory does it. The factory's tests pass, but it isn't deployed, so the Install page can't run its proposals yet.
 - **Trezu.** The demo DAO has not been opened in Trezu.

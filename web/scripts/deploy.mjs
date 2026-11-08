@@ -277,13 +277,19 @@ function fastfsPayload(path, mime, content) {
   return Buffer.concat([Buffer.from([0]), sized(Buffer.from(path)), Buffer.from([1]), sized(Buffer.from(mime)), sized(content)]);
 }
 
+/** FastFS answers 404 to HEAD even for a file it has, so this fetches the file and checks it. */
+async function published(url, hash) {
+  const res = await fetch(url);
+  return res.ok && sha256hex(Buffer.from(await res.arrayBuffer())) === hash;
+}
+
 /**
  * Publishes the build on FastFS. The call has one gas on purpose: it fails, and the
  * indexer reads the file from its arguments. A file appears a minute or two later.
  */
 async function uploadClerk(code, hash) {
   const url = `https://test.fastfs.io/${RELAY}/${OUTLAYER}/${hash}.wasm`;
-  if ((await fetch(url, { method: "HEAD" })).ok) return url;
+  if (await published(url, hash)) return url;
   await acct(RELAY).signAndSendTransaction({
     receiverId: OUTLAYER,
     actions: [actions.functionCall("__fastdata_fastfs", fastfsPayload(`${hash}.wasm`, "application/wasm", code), 1n, 0n)],
@@ -292,7 +298,7 @@ async function uploadClerk(code, hash) {
   });
   for (let i = 0; i < 60; i++) {
     await new Promise((done) => setTimeout(done, 5000));
-    if ((await fetch(url, { method: "HEAD" })).ok) return url;
+    if (await published(url, hash)) return url;
   }
   throw new Error(`${url} did not appear`);
 }
@@ -320,7 +326,9 @@ async function storeClerkSecrets(hash, apiKey) {
   const accessor = { type: "WasmHash", hash };
   const base = { accessor, owner: RELAY, profile: CLERK_PROFILE };
   const secrets = JSON.stringify({ NEAR_AI_API_KEY: apiKey });
-  const { pubkey } = await postJson(`${OUTLAYER_API}/secrets/pubkey`, { ...base, secrets_json: secrets });
+  // This key depends only on the build and the owner, so the real value stays out of this
+  // request. The model key leaves this machine only inside the encrypted blob below.
+  const { pubkey } = await postJson(`${OUTLAYER_API}/secrets/pubkey`, { ...base, secrets_json: JSON.stringify({ NEAR_AI_API_KEY: "placeholder" }) });
   const generated = await postJson(`${OUTLAYER_API}/secrets/add_generated_secret`, {
     ...base,
     encrypted_secrets_base64: encryptToKeystore(pubkey, secrets),

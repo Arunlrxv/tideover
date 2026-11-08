@@ -107,8 +107,9 @@ Design details: [docs/DESIGN.md](docs/DESIGN.md).
 | Live NEAR Intents quotes | Working for 3 chains |
 | Deployed to testnet, real Sputnik DAO flow | Done. Claims paid on all three paths, and 10 attacks refused. See [the results](docs/TESTNET.md). |
 | The real model on the sample documents | 4 of 4 read as expected, and the trick document was flagged. See [the results](docs/model-check.json). About $0.0008 a review at most. |
-| A real review through the clerk, on chain | Done with the demo's server clerk, claim #4 |
-| The clerk running in an OutLayer enclave | **Not yet** |
+| A real review through the clerk, on chain | Done in OutLayer's enclave, claim #5 |
+| The clerk running in an OutLayer enclave | Done. The DAO pinned the build, and the Trust page compares it with OutLayer's record. See [the results](docs/TESTNET.md). |
+| Checking the enclave's Intel quote with `outlayer-verify` | **Not run** |
 | Gas on chain | Filing a claim 24.4 Tgas, posting a card up to 3.8 Tgas, paying dues 45.8 Tgas |
 | The factory on testnet | **Not deployed.** The demo fund was created directly to save test NEAR |
 | Opening the demo DAO in Trezu | **Not tested** |
@@ -122,7 +123,7 @@ Written for the people it would protect, in full on the [Trust page](web/src/app
 - **Amounts and timing are public.** One member's claims within a year can be linked to each other, though not to them.
 - **A sealed document sits in a public transaction on its way to the enclave**, as ciphertext only the clerk can open. Anyone who later obtained the clerk's key could read old documents.
 - **You trust enclave hardware**, Intel TDX and NVIDIA. The clerk reaches the model over TLS and does not check its attestation itself yet.
-- **A clerk on a server is not private.** Until a fund pins an enclave build, the demo's server could read a document, and the Trust page says so.
+- **A clerk on a server is not private.** Until a fund pins an enclave build, whoever runs its server could read a document, and the Trust page says so. The demo fund has pinned one.
 - **Fraud is capped, not impossible.** AI cannot reliably spot a forged document. [The simulation](sim/solvency.mjs) shows what the limits do: over 10,000 three-year runs of a 40-member fund, one persistent cheat takes about 15% of dues, and honest members still receive 96% of the dollars they ask for. Four cheats take about 52%. These numbers rest on assumed catch rates. A fund of people who know each other is the real defence.
 - **The zero-knowledge setup was run by one party**, and the contracts are unaudited. Do not use real money with this version.
 

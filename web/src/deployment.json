@@ -22,10 +22,15 @@
     "eli.tideover-hq.testnet"
   ],
   "factoryLive": false,
-  "clerk": {},
+  "clerk": {
+    "keysTx": "7759njmDNzD3wCiDitgLXjrms5NEiqGBi5UujogBrro6",
+    "keysSender": "relay.tideover-hq.testnet",
+    "wasmUrl": "https://test.fastfs.io/relay.tideover-hq.testnet/outlayer.testnet/410b38192e64034b45291cc204eaa3188d11ee525f02db528d9884713919fe2d.wasm"
+  },
   "transactions": {
     "Create the DAO": "3MdvWYNWuExyzuj11mmdVD6svWDR2QVT49tk5a7anK19",
     "Install Tideover: give the fund a role limited to transfers": "CLVMNmqZsaaeSZQufozr81q1Gq1dCJGtCEpabX7iUj3e",
-    "Pin the sealed clerk: the demo server's clerk, until an enclave build is pinned, key a23f6aa2b72c…": "GdbqCKNNMJbAWunfMbfzXEWbbgMYgUFHMdMBFTPJMt8x"
+    "Pin the sealed clerk: the demo server's clerk, until an enclave build is pinned, key a23f6aa2b72c…": "GdbqCKNNMJbAWunfMbfzXEWbbgMYgUFHMdMBFTPJMt8x",
+    "Pin the sealed clerk: enclave build 410b38192e64…, key 31231020b28e…": "HCKx8bVfs8Xn4U5xcRAqXjSxPs4ftihMxKZA3iAYVUxD"
   }
 }
