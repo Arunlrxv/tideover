@@ -105,7 +105,7 @@ Design details: [docs/DESIGN.md](docs/DESIGN.md).
 | All four contracts through NEAR's own wasm preparation at protocol 88 | Pass |
 | Proof time in a real browser | 2.9 s |
 | Live NEAR Intents quotes | Working for 3 chains |
-| Deployed to testnet, real Sputnik DAO flow | Done. Claims paid on all three paths, and 11 attacks refused. See [the results](docs/TESTNET.md). |
+| Deployed to testnet, real Sputnik DAO flow | Done. Claims paid on all three paths, and 10 attacks refused. See [the results](docs/TESTNET.md). |
 | The real model on the sample documents | 4 of 4 read as expected, and the trick document was flagged. See [the results](docs/model-check.json). About $0.0008 a review at most. |
 | A real review through the clerk, on chain | Done with the demo's server clerk, claim #4 |
 | The clerk running in an OutLayer enclave | **Not yet** |

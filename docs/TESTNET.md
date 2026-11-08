@@ -21,7 +21,7 @@ The whole deployment cost about 11.6 test NEAR, nearly all of it locked as contr
 | #3 | $600 | Normal DAO proposal, council vote | Paid by DAO proposal #4 |
 | #4 | $85 | Automatic, filed through the real app, read by the real model | Paid by DAO proposal #5 |
 
-Each payout's token balance was checked after payment, and so was the DAO's for #0, #1 and #3. Claim #2 ($50) is the honest claim from the attack run below, and it never got a card.
+Each payout's token balance was checked after payment. The drop in the DAO's balance was also checked for #0 and #3. Claim #2 ($50) is the honest claim from the attack run below, and it never got a card.
 
 Claim #4 is the full path: a new member joined from the browser with no wallet, paid dues with no gas, proved membership in the browser in 2.8 seconds, and filed through the relay. The real model then read the sealed document, and the contract checked the clerk's signature on the card. The page's own re-check then confirmed the proof and the signature in the browser.
 
@@ -37,7 +37,7 @@ Claims #0 and #1 used a fixed test card, signed with the demo clerk's key, to av
 
 ## Attacks the live contract refused
 
-All 11 are in [e2e-testnet-attacks.json](e2e-testnet-attacks.json): raising the amount past the cover, changing it within the cover, redirecting the payout, paying the DAO itself, a made-up member list, claiming twice in a cycle, a stranger voting on a panel, a forged card, pinning a clerk without the DAO, and the relay voting on the DAO's proposals. The eleventh check is that the honest version of the same claim is accepted.
+Ten attacks were refused, and the honest version of the same claim was accepted. All 11 checks are in [e2e-testnet-attacks.json](e2e-testnet-attacks.json). The attacks were: raising the amount past the cover, changing it within the cover, redirecting the payout, paying the DAO itself, a made-up member list, claiming twice in a cycle, a stranger voting on a panel, a forged card, pinning a clerk without the DAO, and the relay voting on the DAO's proposals.
 
 ## Gas
 
