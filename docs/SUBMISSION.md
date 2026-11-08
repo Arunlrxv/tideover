@@ -51,8 +51,9 @@ Keep these out of the repo once filled in, because they contain personal data.
 
 ## Checklist
 
-- [ ] Live deployment and the app link in the README
-- [ ] A real NEAR AI review run end to end
+- [x] Live deployment on testnet ([results](TESTNET.md))
+- [ ] A hosted copy of the app, and its link in the README
+- [x] A real NEAR AI review run end to end, with the demo's server clerk
 - [ ] The clerk pinned as an enclave build, and the Trust page showing it
 - [ ] Repository public, with no keys in its history
 - [ ] Demo post live on X

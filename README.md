@@ -24,9 +24,10 @@ The AI never moves money. It can only choose a path, and every path is bounded b
 
 ## Try it
 
-**Status: the live testnet deployment is not up yet, because the public testnet faucet is rate-limited for this machine. Everything below runs as soon as it deploys. See [Status](#status).**
+**The contracts are live on NEAR testnet, and the full flow below has run there. See [the results](docs/TESTNET.md).** There is no hosted copy yet.
 
-Live app: to be added. No wallet is needed.
+- **With no keys:** run the app locally as under [Run it yourself](#run-it-yourself), then open **Ledger** and **Records**, and click **Re-check this claim here** on any claim. These read the live contracts directly.
+- **For the steps below:** the app needs relay keys in `web/.env.local`, so these need a hosted copy, or your own deployment, which takes about 12 test NEAR. See [docs/DEPLOY.md](docs/DEPLOY.md). No wallet is needed.
 
 1. Open **Member** and click **Join the fund**. See a named account, 100 test dollars and twelve months of record, all made in seconds. You hold no NEAR.
 2. Click **Pay $10**. See your cover appear. The relay paid the gas through a NEP-366 meta-transaction, and the money went to the DAO.
@@ -104,11 +105,12 @@ Design details: [docs/DESIGN.md](docs/DESIGN.md).
 | All four contracts through NEAR's own wasm preparation at protocol 88 | Pass |
 | Proof time in a real browser | 2.9 s |
 | Live NEAR Intents quotes | Working for 3 chains |
-| Deployed to testnet, real Sputnik DAO flow | **Not yet** |
+| Deployed to testnet, real Sputnik DAO flow | Done. Claims paid on all three paths, and 11 attacks refused. See [the results](docs/TESTNET.md). |
 | The real model on the sample documents | 4 of 4 read as expected, and the trick document was flagged. See [the results](docs/model-check.json). About $0.0008 a review at most. |
-| A real review through the clerk, on chain | **Not yet** |
+| A real review through the clerk, on chain | Done with the demo's server clerk, claim #4 |
 | The clerk running in an OutLayer enclave | **Not yet** |
-| Gas figures | **Not yet measured** on chain |
+| Gas on chain | Filing a claim 24.4 Tgas, posting a card up to 3.8 Tgas, paying dues 45.8 Tgas |
+| The factory on testnet | **Not deployed.** The demo fund was created directly to save test NEAR |
 | Opening the demo DAO in Trezu | **Not tested** |
 | Trezu templates in Trezu | **Not tested.** Checked by reading its parser, not by running it |
 
