@@ -12,7 +12,8 @@ export const DEPLOYMENT = join(ROOT, "web", "src", "deployment.json");
 export const SECRETS = join(ROOT, ".testnet", "secrets.json");
 
 export const provider = new FailoverRpcProvider(
-  ["https://rpc.testnet.fastnear.com", "https://test.rpc.fastnear.com", "https://near-testnet.drpc.org"].map(
+  // drpc first: the free FastNEAR tier rate-limits a long test run.
+  ["https://near-testnet.drpc.org", "https://rpc.testnet.fastnear.com", "https://test.rpc.fastnear.com"].map(
     (url) => new JsonRpcProvider({ url }, { retries: 2, wait: 400, backoff: 2 }),
   ),
 );

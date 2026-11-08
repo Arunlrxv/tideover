@@ -191,17 +191,30 @@ async function deployAndInit(id, file, method, args) {
 /** Files a proposal as the first council member, then votes it through. */
 async function propose(description, kind) {
   const bond = BigInt((await view(DAO, "get_policy")).proposal_bond);
-  const { value: id } = await call(acct(COUNCIL[0]), DAO, "add_proposal", { proposal: { description, kind } }, { deposit: bond, tgas: 50 });
+  // A rerun picks up the same proposal rather than filing it again.
+  const lastId = await view(DAO, "get_last_proposal_id");
+  const recent = await view(DAO, "get_proposals", { from_index: Math.max(0, lastId - 10), limit: 10 });
+  let id = recent.find((p) => p.description === description && p.status === "InProgress")?.id;
+  if (id === undefined) {
+    ({ value: id } = await call(acct(COUNCIL[0]), DAO, "add_proposal", { proposal: { description, kind } }, { deposit: bond, tgas: 50 }));
+  }
   log(`  proposal #${id}: ${description}`);
+  // A transaction must hold its gas at a pessimistic price up front. The first vote only
+  // records, so it needs little; the second runs the proposal, so it carries the gas.
   let last;
-  for (const member of COUNCIL.slice(0, 2)) {
-    last = await call(acct(member), DAO, "act_proposal", { id, action: "VoteApprove", proposal: kind }, { tgas: 300 });
+  for (const [member, tgas] of [
+    [COUNCIL[1], 30],
+    [COUNCIL[0], 150],
+  ]) {
+    const now = await view(DAO, "get_proposal", { id });
+    if (now.status !== "InProgress" || now.votes?.[member]) continue;
+    last = await call(acct(member), DAO, "act_proposal", { id, action: "VoteApprove", proposal: kind }, { tgas });
   }
   const p = await view(DAO, "get_proposal", { id });
   if (p.status !== "Approved") throw new Error(`proposal ${id} ended as ${p.status}`);
-  S.txs[description] = last.hash;
+  if (last) S.txs[description] = last.hash;
   save();
-  return { id, hash: last.hash };
+  return { id, hash: last?.hash };
 }
 
 const functionCallKind = (receiver_id, method_name, args, deposit, gas) => ({
@@ -430,7 +443,7 @@ async function main() {
         policy: POLICY,
       }),
     ).toString("base64");
-    const r = await call(acct(COUNCIL[0]), DAO_FACTORY, "create", { name: DAO_NAME, args }, { deposit: near(DAO_DEPOSIT), tgas: 300 });
+    const r = await call(acct(COUNCIL[0]), DAO_FACTORY, "create", { name: DAO_NAME, args }, { deposit: near(DAO_DEPOSIT), tgas: 150 });
     S.txs["Create the DAO"] = r.hash;
   });
 

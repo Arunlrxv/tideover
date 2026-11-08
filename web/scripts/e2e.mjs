@@ -234,7 +234,8 @@ async function scenarioCouncilClaim() {
   else pass("the proposal the council sees has no name and no reason");
 
   for (const voter of D.council.slice(0, 2)) {
-    await call(new Account(voter, provider, S.demoKey), D.dao, "act_proposal", { id: p.id, action: "VoteApprove", proposal: p.kind }, { tgas: 300 });
+    // 60 Tgas runs a token transfer; a vote must hold its gas up front, so less is cheaper.
+    await call(new Account(voter, provider, S.demoKey), D.dao, "act_proposal", { id: p.id, action: "VoteApprove", proposal: p.kind }, { tgas: 60 });
   }
   await advance(filed.id);
   const done = await settle(filed.id);
@@ -283,7 +284,7 @@ async function main() {
   if (!only || only === "panel") await scenarioPanelClaim();
   if (!only || only === "attacks") await attacks();
   if (!only || only === "council") await scenarioCouncilClaim();
-  writeJson(join(ROOT, "docs", "e2e-testnet.json"), { at: new Date().toISOString(), fund: FUND, model: Boolean(apiKey), results });
+  writeJson(join(ROOT, "docs", `e2e-testnet-${only ?? "all"}.json`), { at: new Date().toISOString(), fund: FUND, model: Boolean(apiKey), results });
   const ok = results.filter((r) => r.ok).length;
   log(`${ok} of ${results.length} checks passed`);
 }

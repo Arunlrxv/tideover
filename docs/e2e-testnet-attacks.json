@@ -1,0 +1,62 @@
+{
+  "at": "2026-11-08T01:41:04.059Z",
+  "fund": "harbor.funds.tideover-hq.testnet",
+  "model": false,
+  "results": [
+    {
+      "name": "a relay cannot raise the amount past the cover",
+      "ok": true,
+      "detail": "refused: \"Above the cover\""
+    },
+    {
+      "name": "a relay cannot change the amount within cover",
+      "ok": true,
+      "detail": "refused: \"does not verify\""
+    },
+    {
+      "name": "a relay cannot redirect the payout",
+      "ok": true,
+      "detail": "refused: \"does not verify\""
+    },
+    {
+      "name": "the DAO cannot be the payout",
+      "ok": true,
+      "detail": "refused: \"cannot be the payout\""
+    },
+    {
+      "name": "a made-up member root is refused",
+      "ok": true,
+      "detail": "refused: \"Unknown or stale\""
+    },
+    {
+      "name": "the honest version of the same claim files",
+      "ok": true,
+      "detail": "4PAD3LFVoSquwF2KB6Sh9Qwp9SFji1wjkCinEYn6gfFE"
+    },
+    {
+      "name": "a member cannot claim twice in a cycle",
+      "ok": true,
+      "detail": "refused: \"already claimed this cycle\""
+    },
+    {
+      "name": "strangers cannot vote on a panel",
+      "ok": true,
+      "detail": "refused: \"not with a panel\""
+    },
+    {
+      "name": "a forged card is refused",
+      "ok": true,
+      "detail": "refused: \"bad clerk signature\""
+    },
+    {
+      "name": "only the DAO pins the clerk",
+      "ok": true,
+      "detail": "refused: \"Only the DAO\""
+    },
+    {
+      "name": "the fund's relay has no power over the DAO",
+      "ok": true,
+      "detail": "refused: \"ERR_PERMISSION_DENIED\""
+    }
+  ]
+}

@@ -38,7 +38,8 @@ export async function POST(req: Request) {
         D.dao,
         "act_proposal",
         { id: proposal.id, action: b.approve ? "VoteApprove" : "VoteReject", proposal: proposal.kind },
-        { tgas: 300 },
+        // Enough to run a token transfer. A vote holds its gas up front, so less is cheaper.
+        { tgas: 60 },
       );
       return NextResponse.json({ hash });
     }

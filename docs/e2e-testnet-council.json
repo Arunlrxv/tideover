@@ -1,0 +1,22 @@
+{
+  "at": "2026-11-08T01:45:04.339Z",
+  "fund": "harbor.funds.tideover-hq.testnet",
+  "model": false,
+  "results": [
+    {
+      "name": "a $600 claim becomes a normal DAO proposal",
+      "ok": true,
+      "detail": "#4: \"* Title: Tideover claim #3 <br>* Notes: Reason sealed\""
+    },
+    {
+      "name": "the proposal the council sees has no name and no reason",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the council's vote paid the claim",
+      "ok": true,
+      "detail": "proposal #4, $600"
+    }
+  ]
+}

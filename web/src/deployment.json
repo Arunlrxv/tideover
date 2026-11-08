@@ -1,13 +1,31 @@
 {
   "network": "testnet",
-  "fund": "",
-  "dao": "",
-  "token": "",
-  "factory": "",
+  "fund": "harbor.funds.tideover-hq.testnet",
+  "dao": "harbor-mutual.sputnikv2.testnet",
+  "token": "usd.tideover-hq.testnet",
+  "factory": "funds.tideover-hq.testnet",
   "tokenSymbol": "tUSD",
   "tokenDecimals": 6,
-  "council": [],
-  "guardians": [],
-  "seededMembers": [],
-  "transactions": {}
+  "council": [
+    "maya.tideover-hq.testnet",
+    "tomas.tideover-hq.testnet",
+    "ines.tideover-hq.testnet"
+  ],
+  "guardians": [
+    "maya.tideover-hq.testnet"
+  ],
+  "seededMembers": [
+    "amara.tideover-hq.testnet",
+    "ben.tideover-hq.testnet",
+    "chi.tideover-hq.testnet",
+    "dara.tideover-hq.testnet",
+    "eli.tideover-hq.testnet"
+  ],
+  "factoryLive": false,
+  "clerk": {},
+  "transactions": {
+    "Create the DAO": "3MdvWYNWuExyzuj11mmdVD6svWDR2QVT49tk5a7anK19",
+    "Install Tideover: give the fund a role limited to transfers": "CLVMNmqZsaaeSZQufozr81q1Gq1dCJGtCEpabX7iUj3e",
+    "Pin the sealed clerk: the demo server's clerk, until an enclave build is pinned, key a23f6aa2b72c…": "GdbqCKNNMJbAWunfMbfzXEWbbgMYgUFHMdMBFTPJMt8x"
+  }
 }
