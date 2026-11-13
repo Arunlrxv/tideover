@@ -22,6 +22,7 @@ The demo community cost about 11.6 test NEAR, nearly all of it locked as contrac
 | #3 | $600 | Normal DAO proposal, council vote | Paid by DAO proposal #4 |
 | #4 | $85 | Automatic, filed through the real app, read by the real model, with the clerk on the demo's server | Paid by DAO proposal #5 |
 | #5 | $85 | The same, with the clerk in OutLayer's enclave | Paid by DAO proposal #7 |
+| #6 | $280 | Three random members, two approved, with the clerk in the enclave. Filmed for the demo video | Paid by DAO proposal #8 |
 
 Each payout's token balance was checked after payment. The drop in the DAO's balance was also checked for #0, #3 and #5. Claim #2 ($50) is the honest claim from the attack run below, and it never got a card.
 
